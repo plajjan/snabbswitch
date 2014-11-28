@@ -116,16 +116,12 @@ function DDoS:push ()
       -- dig out src IP from packet
       -- TODO: do we really need to do ntop on this? is that an expensive operation?
       local src_ip = ipv4:ntop(iovec.buffer.pointer + iovec.offset + 26)
-      if src_ip == "90.130.74.151" then
-         packet.deref(p)
-         return
-      end
 
       -- short cut for stuff in blocklist that is in state block
       if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
 --         print(src_ip .. " in blocklist")
-         packet.deref(p)
-         return
+--         packet.deref(p)
+--         return
       end
 
       local rule_match = nil
@@ -174,24 +170,24 @@ function DDoS:push ()
       src.pps_tokens = src.pps_tokens - 1
       if src.pps_tokens <= 0 then
          if src.block_until == nil then
-            print("packet rate from: " .. tostring(src_ip) .. " too high, blocking")
+--            print("packet rate from: " .. tostring(src_ip) .. " too high, blocking")
          else
-            print("packet rate from: " .. tostring(src_ip) .. " too high, extending blocking")
+--            print("packet rate from: " .. tostring(src_ip) .. " too high, extending blocking")
          end
          src.block_until = tonumber(app.now()) + self.block_period
          self.blocklist[src_ip] = { action = "block", block_until = tonumber(app.now()) + self.block_period-5}
       end
 
       if src.block_until ~= nil and src.block_until < tonumber(app.now()) then
-         print("got packet: "..tostring(src_ip).. " was in block, now ALLOW!")
+--         print("got packet: "..tostring(src_ip).. " was in block, now ALLOW!")
          src.block_until = nil
       end
 
       if src.block_until ~= nil then
-         print("got packet: "..tostring(src_ip).. " tokens: " .. src.pps_tokens .. " IN BLOCK")
+--         print("got packet: "..tostring(src_ip).. " tokens: " .. src.pps_tokens .. " IN BLOCK")
          packet.deref(p)
       else
-         print("got packet: "..tostring(src_ip).. " matched: " .. tostring(rule_match) .. " tokens: " .. src.pps_tokens .. " PASS")
+--         print("got packet: "..tostring(src_ip).. " matched: " .. tostring(rule_match) .. " tokens: " .. src.pps_tokens .. " PASS")
          link.transmit(o, p)
       end
    end
@@ -215,6 +211,7 @@ function DDoS:report()
             -- calculate pps, so we write '-'
             rate = "    -"
          else
+			-- TODO: calculate real PPS rate
             rate = string.format("%5.0f", src_info.pps_tokens)
          end
          str = string.format("  %15s tokens: %s ", src_ip, rate)
