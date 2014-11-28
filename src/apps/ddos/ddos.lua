@@ -56,40 +56,47 @@ DDoS = {}
 function DDoS:new (arg)
    print("-- DDoS Init --")
    local conf = arg and config.parse_app_arg(arg) or {}
-   assert(conf.rate)
-   assert(conf.bucket_capacity)
-   conf.initial_capacity = conf.initial_capacity or conf.bucket_capacity
+   assert(conf.block_period >= 5, "block_period must be at least 5 seconds")
    local o =
    {
       blocklist = {},
       rules = conf.rules,
-      srcs = {},
-      rate = conf.rate,
-      bucket_capacity = conf.bucket_capacity,
-      bucket_content = conf.initial_capacity,
       block_period = conf.block_period
    }
 
-
    self = setmetatable(o, {__index = DDoS})
 
-   -- TODO: need a periodic task to do various tasks like garbage collection
-   -- but this isn't intialized in the proper way as the periodic function
-   -- doesn't receive the 'self' object
---   timer.activate(timer.new(
---      "periodic",
---      function ()
---         self.periodic()
---      end,
---      1e9, -- every second
---      'repeating'
---   ))
+   -- pre-process rules
+   for rule_name, rule in pairs(self.rules) do
+      rule.srcs = {}
+      -- compile the filter
+      local filter, errmsg = filter:new(rule.filter)
+      assert(filter, errmsg and ffi.string(errmsg))
+      rule.cfilter = filter
+   end
+
+   -- schedule periodic task every second
+   timer.activate(timer.new(
+      "periodic",
+      function () self:periodic() end,
+      1e10, -- every 10 seconds
+      'repeating'
+   ))
    return self
 end 
 
 
 function DDoS:periodic()
-   print("DDoS Periodic!!" .. type(self))
+--   print("DDoS Periodic!!")
+   -- TODO: remove items from the blocklist
+   -- TODO: just do one call to app.now() - if it's an expensive call
+--   local cur_now = tonumber(app.now())
+   for src_ip, blocklist in pairs(self.blocklist) do
+      print("Checking block for: " .. src_ip)
+      if blocklist.block_until < tonumber(app.now()) then
+         self.blocklist[src_ip] = nil
+      end
+   end
 end
 
 
@@ -109,63 +116,70 @@ function DDoS:push ()
       -- dig out src IP from packet
       -- TODO: do we really need to do ntop on this? is that an expensive operation?
       local src_ip = ipv4:ntop(iovec.buffer.pointer + iovec.offset + 26)
---      if self.blocklist[src_ip] ~= nil then
---         packet.deref(p)
---      end
-
-      -- TODO: do BPF style filter match
-      for rule_name, rule in pairs(self.rules) do
-         print("Evaling rule: " .. rule_name .. " match: " .. rule.filter)
-         -- TODO: should precompute these filters
-         local filter, errmsg = filter:new(rule.filter)
-         assert(filter, errmsg and ffi.string(errmsg))
-         if filter:match(dgram:payload()) then
-            print("match")
-         else
-            link.transmit(o, p)
-         end
-
+      if src_ip == "90.130.74.151" then
+         packet.deref(p)
+         return
       end
 
+      -- short cut for stuff in blocklist that is in state block
+      if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
+--         print(src_ip .. " in blocklist")
+         packet.deref(p)
+         return
+      end
+
+      local rule_match = nil
+      for rule_name, rule in pairs(self.rules) do
+         if rule.cfilter:match(dgram:payload()) then
+            --print(src_ip .. " Matched rule: " .. rule_name .. " [ " .. rule.filter .. " ]")
+            rule_match = rule_name
+         end
+      end
+
+      -- didn't match any rule, so permit it
+      if rule_match == nil then
+--         print("shortcut")
+         link.transmit(o, p)
+         return
+      end
 
       -- get our data struct on that source IP
-      if self.srcs[src_ip] == nil then
-         print("New source ip: " .. src_ip)
-         self.srcs[src_ip] = {
-            rate = self.rate,
+      -- TODO: we need to periodically clean this data struct up so it doesn't just fill up and consume all memory
+      if self.rules[rule_match].srcs[src_ip] == nil then
+--         print("New source ip: " .. src_ip)
+         self.rules[rule_match].srcs[src_ip] = {
+            pps_rate = self.rules[rule_match].pps_rate,
+            pps_tokens = self.rules[rule_match].pps_burst,
+            pps_capacity = self.rules[rule_match].pps_burst,
             bucket_content = self.bucket_capacity,
             bucket_capacity = self.bucket_capacity,
             block_until = nil
             }
       end
-      local src = self.srcs[src_ip]
+      local src = self.rules[rule_match].srcs[src_ip]
 
-      -- TODO: is this expensive to do for every packet?
-      -- TODO: when we are in block mode, we should stop calculating the rate.
-      -- Just before (a few seconds) a block is about to expire, we should
-      -- start calculating the rate again so we can extend the block if the
-      -- rate is still too high
-      --
       -- figure out rates n shit
       do
+         -- TODO: is this expensive to do for every packet?
          local cur_now = tonumber(app.now())
          local last_time = src.last_time or cur_now
-         src.bucket_content = math.max(0,math.min(
-               src.bucket_content + src.rate * (cur_now - last_time),
-               src.bucket_capacity
+         src.pps_tokens = math.max(0,math.min(
+               src.pps_tokens + src.pps_rate * (cur_now - last_time),
+               src.pps_capacity
             ))
          src.last_time = cur_now
       end
 
       -- TODO: this is for pps, do the same for bps
-      src.bucket_content = src.bucket_content - 1
-      if src.bucket_content <= 0 then
+      src.pps_tokens = src.pps_tokens - 1
+      if src.pps_tokens <= 0 then
          if src.block_until == nil then
             print("packet rate from: " .. tostring(src_ip) .. " too high, blocking")
          else
-            --print("packet rate from: " .. tostring(src_ip) .. " too high, extending blocking")
+            print("packet rate from: " .. tostring(src_ip) .. " too high, extending blocking")
          end
-         src.block_until = tonumber(app.now()) + 10
+         src.block_until = tonumber(app.now()) + self.block_period
+         self.blocklist[src_ip] = { action = "block", block_until = tonumber(app.now()) + self.block_period-5}
       end
 
       if src.block_until ~= nil and src.block_until < tonumber(app.now()) then
@@ -174,10 +188,10 @@ function DDoS:push ()
       end
 
       if src.block_until ~= nil then
-         --print("got packet: "..tostring(src_ip).. " tokens: " .. src.bucket_content .. " IN BLOCK")
+         print("got packet: "..tostring(src_ip).. " tokens: " .. src.pps_tokens .. " IN BLOCK")
          packet.deref(p)
       else
-         --print("got packet: "..tostring(src_ip).. " tokens: " .. src.bucket_content .. " PASS")
+         print("got packet: "..tostring(src_ip).. " matched: " .. tostring(rule_match) .. " tokens: " .. src.pps_tokens .. " PASS")
          link.transmit(o, p)
       end
    end
@@ -186,15 +200,30 @@ end
 
 function DDoS:report()
    print("-- DDoS report --")
-   print("Configured rate: " .. self.rate .. " pps")
    print("Configured block period: " .. self.block_period .. " seconds")
-   print("Traffic from:")
-   for key,_ in pairs(self.srcs) do
-      local src = self.srcs[key]
-      if src.block_until == nil then
-         print("  " .. key .. " allowed")
-      else
-         print("  " .. key .. " blocked for another " .. string.format("%0.1f", tostring(src.block_until - tonumber(app.now()))) .. " seconds")
+   print("Block list:")
+   for src_ip,blocklist in pairs(self.blocklist) do
+      print("  " .. src_ip .. " blocked for another " .. string.format("%0.1f", tostring(blocklist.block_until - tonumber(app.now()))) .. " seconds")
+   end
+   print("Traffic rules:")
+   for rule_name,rule in pairs(self.rules) do
+      print(" - " .. rule_name .. " [ " .. rule.filter .. " ]  pps_rate: " .. rule.pps_rate)
+      for src_ip,src_info in pairs(rule.srcs) do
+         -- calculate rate of packets
+         if self.blocklist[src_ip] ~= nil then
+            -- if source is in blocklist it means we shortcut and thus don't
+            -- calculate pps, so we write '-'
+            rate = "    -"
+         else
+            rate = string.format("%5.0f", src_info.pps_tokens)
+         end
+         str = string.format("  %15s tokens: %s ", src_ip, rate)
+         if src_info.block_until == nil then
+            str = string.format("%s %-7s", str, "allowed")
+         else
+            str = string.format("%s %-7s", str, "blocked for another " .. string.format("%0.1f", tostring(src_info.block_until - tonumber(app.now()))) .. " seconds")
+         end
+         print(str)
       end
    end
 end
