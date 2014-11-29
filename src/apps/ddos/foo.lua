@@ -52,9 +52,9 @@ function run (args)
 
    local rules = {
       icmp = {
-         filter = "icmp",
-         pps_rate = 1000,
-         pps_burst = 1000,
+         filter = "icmp6",
+         pps_rate = 10000000,
+         pps_burst = 100000000,
          bps_rate = nil,
          bps_burst = nil
       },
@@ -76,14 +76,15 @@ function run (args)
 
    app.configure(c)
 
-   local fn = function ()
-      -- TODO: only reports statistics for DDoS app?
-      local d = app.app_table["ddos"]
-      --d.report()
-      app.report_each_app()
-   end
-   local t = timer.new("report", fn, 1e9, 'repeating')
-   timer.activate(t)
+   timer.activate(timer.new(
+      "report",
+	  function()
+--		  app.app_table["ddos"]:report()
+--      app.report_each_app()
+	  end,
+	  1e9,
+	  'repeating'
+   ))
 
    buffer.preallocate(100000)
    app.main()
