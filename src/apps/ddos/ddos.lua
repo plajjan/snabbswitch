@@ -1,52 +1,20 @@
 module(..., package.seeall)
 
 local app = require("core.app")
-local buffer = require("core.buffer")
 local packet = require("core.packet")
 local link = require("core.link")
 local ipv4 = require("lib.protocol.ipv4")
 local filter = require("lib.pcap.filter")
+local buffer = require("core.buffer")
 
-local ethernet = require("lib.protocol.ethernet")
 local datagram = require("lib.protocol.datagram")
 
 local ffi = require("ffi")
-local C = ffi.C
 
-local ipv4_header_struct_ctype = ffi.typeof[[
-struct {
-   // ethernet
-   char dmac[6];
-   char smac[6];
-   uint16_t ethertype;
-   // ipv6
-   uint32_t crap1; // version, ihl, dscp, ecn, total length
-   uint32_t crap2; // id, flags, fragment offset
-   uint32_t crap3; // ttl, protocol, header_checksum
-   char src_ip[4];
-   char dst_ip[4];
-} __attribute__((packed))
-]]
+local ETHERTYPE_OFFSET = 12
 
-local ipv6_header_struct_ctype = ffi.typeof[[
-struct {
-   // ethernet
-   char dmac[6];
-   char smac[6];
-   uint16_t ethertype;
-   // ipv6
-   uint32_t flow_id; // version, tc, flow_id
-   int16_t payload_length;
-   int8_t  next_header;
-   uint8_t hop_limit;
-   char src_ip[16];
-   char dst_ip[16];
-} __attribute__((packed))
-]]
-
-local paddress_ctype = ffi.typeof("uint64_t*")
-local IPV6_SRC_IP_OFFSET = ffi.offsetof(ipv6_header_struct_ctype, 'src_ip')
-local IPV4_SRC_IP_OFFSET = ffi.offsetof(ipv4_header_struct_ctype, 'src_ip')
+local ETHERTYPE_IPV6 = 0xDD86
+local ETHERTYPE_IPV4 = 0x0008
 
 local AF_INET = 2
 
@@ -87,10 +55,6 @@ end
 
 
 function DDoS:periodic()
---   print("DDoS Periodic!!")
-   -- TODO: remove items from the blocklist
-   -- TODO: just do one call to app.now() - if it's an expensive call
---   local cur_now = tonumber(app.now())
    for src_ip, blocklist in pairs(self.blocklist) do
       print("Checking block for: " .. src_ip)
       if blocklist.block_until < tonumber(app.now()) then
@@ -111,19 +75,24 @@ function DDoS:push ()
       local p = link.receive(i)
       local iovec = p.iovecs[0]
 
-      dgram = datagram:new(p)
-
       -- dig out src IP from packet
       -- TODO: do we really need to do ntop on this? is that an expensive operation?
+		-- TODO: don't use a fixed offset - it'll break badly on non-IPv4 packet :/
+		local ethertype = ffi.cast("uint16_t*", iovec.buffer + ETHERTYPE_OFFSET)
+		--print("etype: " .. tostring(ethertype))
       local src_ip = ipv4:ntop(iovec.buffer.pointer + iovec.offset + 26)
 
       -- short cut for stuff in blocklist that is in state block
       if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
---         print(src_ip .. " in blocklist")
+		-- TODO: this is weird. When this "shortcut" is enabled we lower CPU
+		-- usage but legitimate traffic that shouldn't be blacklisted is dropped
+		-- as well, why?
 --         packet.deref(p)
 --         return
       end
 
+      dgram = datagram:new(p)
+		-- match up against our filter rules
       local rule_match = nil
       for rule_name, rule in pairs(self.rules) do
          if rule.cfilter:match(dgram:payload()) then
@@ -131,10 +100,8 @@ function DDoS:push ()
             rule_match = rule_name
          end
       end
-
       -- didn't match any rule, so permit it
       if rule_match == nil then
---         print("shortcut")
          link.transmit(o, p)
          return
       end
