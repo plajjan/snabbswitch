@@ -57,8 +57,8 @@ function run (args)
    local rules = {
       icmp = {
          filter = "icmp",
-         pps_rate = 10000000,
-         pps_burst = 100000000,
+         pps_rate = 1000,
+         pps_burst = 2000,
          bps_rate = nil,
          bps_burst = nil
       },

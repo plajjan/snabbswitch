@@ -86,11 +86,12 @@ end
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
 
-   -- dig out src IP from packet
    -- TODO: do we really need to do ntop on this? is that an expensive operation?
 
+   -- dig out src IP from packet
    d = self.d:reuse(p, ethernet)
    d:parse_n(2)
+   d:unparse(2)
    local eth, ip = unpack(d:stack())
    local src_ip
    if eth:type() == 0x0800 then
@@ -107,9 +108,8 @@ function DDoS:process_packet(i, o)
       return
    end
 
-
    -- match up against our filter rules
-   local rule_match = self:bpf_match(p)
+   local rule_match = self:bpf_match(d)
    -- didn't match any rule, so permit it
    if rule_match == nil then
       link.transmit(o, p)
@@ -139,11 +139,9 @@ end
 
 
 -- match against our BPF rules and return name of the match
-function DDoS:bpf_match(p)
-   dgram = datagram:new(p)
-
+function DDoS:bpf_match(d)
    for rule_name, rule in pairs(self.rules) do
-      if rule.cfilter:match(dgram:payload()) then
+      if rule.cfilter:match(d:payload()) then
          return rule_name
       end
    end
