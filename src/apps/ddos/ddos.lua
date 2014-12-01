@@ -6,6 +6,7 @@ local link = require("core.link")
 local ipv4 = require("lib.protocol.ipv4")
 local filter = require("lib.pcap.filter")
 local buffer = require("core.buffer")
+local lib = require("core.lib")
 
 local datagram = require("lib.protocol.datagram")
 
@@ -77,22 +78,20 @@ function DDoS:push ()
 
       -- dig out src IP from packet
       -- TODO: do we really need to do ntop on this? is that an expensive operation?
-		-- TODO: don't use a fixed offset - it'll break badly on non-IPv4 packet :/
-		local ethertype = ffi.cast("uint16_t*", iovec.buffer + ETHERTYPE_OFFSET)
-		--print("etype: " .. tostring(ethertype))
+      -- TODO: don't use a fixed offset - it'll break badly on non-IPv4 packet :/
       local src_ip = ipv4:ntop(iovec.buffer.pointer + iovec.offset + 26)
 
       -- short cut for stuff in blocklist that is in state block
       if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
-		-- TODO: this is weird. When this "shortcut" is enabled we lower CPU
-		-- usage but legitimate traffic that shouldn't be blacklisted is dropped
-		-- as well, why?
---         packet.deref(p)
---         return
+         -- TODO: this is weird. When this "shortcut" is enabled we lower CPU
+         -- usage but legitimate traffic that shouldn't be blacklisted is dropped
+         -- as well, why?
+         --packet.deref(p)
+         --return
       end
 
       dgram = datagram:new(p)
-		-- match up against our filter rules
+      -- match up against our filter rules
       local rule_match = nil
       for rule_name, rule in pairs(self.rules) do
          if rule.cfilter:match(dgram:payload()) then
@@ -106,11 +105,12 @@ function DDoS:push ()
          return
       end
 
+      local cur_now = tonumber(app.now())
       -- get our data struct on that source IP
       -- TODO: we need to periodically clean this data struct up so it doesn't just fill up and consume all memory
       if self.rules[rule_match].srcs[src_ip] == nil then
---         print("New source ip: " .. src_ip)
          self.rules[rule_match].srcs[src_ip] = {
+            last_time = cur_now,
             pps_rate = self.rules[rule_match].pps_rate,
             pps_tokens = self.rules[rule_match].pps_burst,
             pps_capacity = self.rules[rule_match].pps_burst,
@@ -122,39 +122,26 @@ function DDoS:push ()
       local src = self.rules[rule_match].srcs[src_ip]
 
       -- figure out rates n shit
-      do
-         -- TODO: is this expensive to do for every packet?
-         local cur_now = tonumber(app.now())
-         local last_time = src.last_time or cur_now
-         src.pps_tokens = math.max(0,math.min(
-               src.pps_tokens + src.pps_rate * (cur_now - last_time),
-               src.pps_capacity
-            ))
-         src.last_time = cur_now
-      end
+      src.pps_tokens = math.max(0,math.min(
+            src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
+            src.pps_capacity
+         ))
+      src.last_time = cur_now
 
       -- TODO: this is for pps, do the same for bps
       src.pps_tokens = src.pps_tokens - 1
       if src.pps_tokens <= 0 then
-         if src.block_until == nil then
---            print("packet rate from: " .. tostring(src_ip) .. " too high, blocking")
-         else
---            print("packet rate from: " .. tostring(src_ip) .. " too high, extending blocking")
-         end
          src.block_until = tonumber(app.now()) + self.block_period
          self.blocklist[src_ip] = { action = "block", block_until = tonumber(app.now()) + self.block_period-5}
       end
 
       if src.block_until ~= nil and src.block_until < tonumber(app.now()) then
---         print("got packet: "..tostring(src_ip).. " was in block, now ALLOW!")
          src.block_until = nil
       end
 
       if src.block_until ~= nil then
---         print("got packet: "..tostring(src_ip).. " tokens: " .. src.pps_tokens .. " IN BLOCK")
          packet.deref(p)
       else
---         print("got packet: "..tostring(src_ip).. " matched: " .. tostring(rule_match) .. " tokens: " .. src.pps_tokens .. " PASS")
          link.transmit(o, p)
       end
    end
@@ -178,7 +165,7 @@ function DDoS:report()
             -- calculate pps, so we write '-'
             rate = "    -"
          else
-			-- TODO: calculate real PPS rate
+            -- TODO: calculate real PPS rate
             rate = string.format("%5.0f", src_info.pps_tokens)
          end
          str = string.format("  %15s tokens: %s ", src_ip, rate)
