@@ -79,24 +79,16 @@ function DDoS:push ()
 
       -- short cut for stuff in blocklist that is in state block
       if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
-         -- TODO: this is weird. When this "shortcut" is enabled we lower CPU
-         -- usage but legitimate traffic that shouldn't be blacklisted is dropped
-         -- as well, why?
          packet.deref(p)
       else
 
          dgram = datagram:new(p)
          -- match up against our filter rules
-         local rule_match = nil
-         for rule_name, rule in pairs(self.rules) do
-            if rule.cfilter:match(dgram:payload()) then
-               --print(src_ip .. " Matched rule: " .. rule_name .. " [ " .. rule.filter .. " ]")
-               rule_match = rule_name
-            end
-         end
+         local rule_match = self:bpf_match(p)
          -- didn't match any rule, so permit it
          if rule_match == nil then
             link.transmit(o, p)
+            -- TODO: potential slow down due to return?
             return
          end
 
@@ -141,6 +133,18 @@ function DDoS:push ()
          end
       end
    end
+end
+
+-- match against our BPF rules and return name of the match
+function DDoS:bpf_match(p)
+   dgram = datagram:new(p)
+
+   for rule_name, rule in pairs(self.rules) do
+      if rule.cfilter:match(dgram:payload()) then
+         return rule_name
+      end
+   end
+   return nil
 end
 
 function DDoS:report()
