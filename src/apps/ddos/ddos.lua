@@ -188,10 +188,10 @@ function DDoS:report()
    for src_ip,blocklist in pairs(self.blocklist) do
       print("  " .. src_ip .. " blocked for another " .. string.format("%0.1f", tostring(blocklist.block_until - tonumber(app.now()))) .. " seconds")
    end
+
    print("Traffic rules:")
    for rule_name,rule in pairs(self.rules) do
-      print(" - Rule " .. rule_name .. " rate: " .. (rule.pps_rate or "-") .. "pps / " .. (rule.bps_rate or "-") .. "bps")
-      print("   Filter: " .. rule.filter)
+      print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule_name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
       for src_ip,src_info in pairs(rule.srcs) do
          -- calculate rate of packets
          if self.blocklist[src_ip] ~= nil then
