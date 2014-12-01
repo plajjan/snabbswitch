@@ -13,6 +13,7 @@ local PcapReader= require("apps.pcap.pcap").PcapReader
 local LoadGen   = require("apps.intel.loadgen").LoadGen
 
 local DDoS = require("apps.ddos.ddos").DDoS
+local PoC = require("apps.ddos.poc").PoC
 
 local ffi = require("ffi")
 local C = ffi.C
@@ -50,9 +51,12 @@ function run (args)
 --		end
 --	end
 
+   config.app(c, "nic0", intel_app.Intel82599, { pciaddr = "0000:02:00.0" })
+   config.app(c, "nic1", intel_app.Intel82599, { pciaddr = "0000:02:00.1" })
+
    local rules = {
       icmp = {
-         filter = "icmp6",
+         filter = "icmp",
          pps_rate = 10000000,
          pps_burst = 100000000,
          bps_rate = nil,
@@ -68,25 +72,26 @@ function run (args)
    }
    config.app(c, "ddos", DDoS, { rules = rules, block_period = 20 })
 
-   config.app(c, "nic0", intel_app.Intel82599, { pciaddr = "0000:02:00.0" })
-   config.app(c, "nic1", intel_app.Intel82599, { pciaddr = "0000:02:00.1" })
-
    config.link(c, "nic0.tx -> ddos.input")
    config.link(c, "ddos.output -> nic1.rx")
+
+--   config.app(c, "poc", PoC, { rules = rules, block_period = 20 })
+--   config.link(c, "nic0.tx -> poc.input")
+--   config.link(c, "poc.output -> nic1.rx")
 
    app.configure(c)
 
    timer.activate(timer.new(
       "report",
-	  function()
---		  app.app_table["ddos"]:report()
---      app.report_each_app()
-	  end,
-	  1e9,
-	  'repeating'
+      function()
+--          app.app_table["ddos"]:report()
+        app.report_each_app()
+      end,
+      1e9,
+      'repeating'
    ))
 
-   buffer.preallocate(100000)
+   buffer.preallocate(10000)
    app.main()
 
 end
