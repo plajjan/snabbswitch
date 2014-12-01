@@ -60,7 +60,6 @@ function DDoS:periodic()
    end
 
    for rule_name,rule in pairs(self.rules) do
-      print(" - " .. rule_name .. " [ " .. rule.filter .. " ]  pps_rate: " .. rule.pps_rate)
       for src_ip,src_info in pairs(rule.srcs) do
          if src_info.block_until ~= nil and src_info.block_until < tonumber(app.now()) then
             src_info.block_until = nil
