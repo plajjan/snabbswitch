@@ -3,17 +3,16 @@ module(..., package.seeall)
 local app = require("core.app")
 local buffer = require("core.buffer")
 local datagram = require("lib.protocol.datagram")
+local ethernet = require("lib.protocol.ethernet")
 local ffi = require("ffi")
 local filter = require("lib.pcap.filter")
 local ipv4 = require("lib.protocol.ipv4")
+local ipv6 = require("lib.protocol.ipv6")
 local lib = require("core.lib")
 local link = require("core.link")
 local packet = require("core.packet")
 
-local AF_INET = 2
-local ETHERTYPE_OFFSET = 12
-local ETHERTYPE_IPV6 = 0xDD86
-local ETHERTYPE_IPV4 = 0x0008
+local C = ffi.C
 
 DDoS = {}
 
@@ -39,6 +38,8 @@ function DDoS:new (arg)
       assert(filter, errmsg and ffi.string(errmsg))
       rule.cfilter = filter
    end
+
+   self.d = datagram:new()
 
    -- schedule periodic task every second
    timer.activate(timer.new(
@@ -84,12 +85,21 @@ end
 
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
-   local iovec = p.iovecs[0]
 
    -- dig out src IP from packet
    -- TODO: do we really need to do ntop on this? is that an expensive operation?
-   -- TODO: don't use a fixed offset - it'll break badly on non-IPv4 packet :/
-   local src_ip = ipv4:ntop(iovec.buffer.pointer + iovec.offset + 26)
+
+   d = self.d:reuse(p, ethernet)
+   d:parse_n(2)
+   local eth, ip = unpack(d:stack())
+   local src_ip
+   if eth:type() == 0x0800 then
+      src_ip = ipv4:ntop(ip:src())
+   elseif eth:type() == 0x86dd then
+      src_ip = ipv6:ntop(ip:src())
+   else
+      return
+   end
 
    -- short cut for stuff in blocklist that is in state block
    if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
@@ -97,7 +107,7 @@ function DDoS:process_packet(i, o)
       return
    end
 
-   dgram = datagram:new(p)
+
    -- match up against our filter rules
    local rule_match = self:bpf_match(p)
    -- didn't match any rule, so permit it
