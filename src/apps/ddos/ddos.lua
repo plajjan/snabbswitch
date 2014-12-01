@@ -119,22 +119,31 @@ function DDoS:process_packet(i, o)
    local cur_now = tonumber(app.now())
    src = self:get_src(rule_match, src_ip)
 
-   -- figure out rates n shit
-   src.pps_tokens = math.max(0,math.min(
-         src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
-         src.pps_capacity
-      ))
-   src.last_time = cur_now
+   -- figure out rates
+   if src.pps_tokens then
+      src.pps_tokens = math.max(0,math.min(
+            src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
+            src.pps_capacity
+         ))
+      src.pps_tokens = src.pps_tokens - 1
+   end
+   if src.bps_tokens then
+      src.bps_tokens = math.max(0,math.min(
+            src.bps_tokens + src.bps_rate * (cur_now - src.last_time),
+            src.bps_capacity
+         ))
+      src.bps_tokens = src.bps_tokens - p.length
+   end
 
-   -- TODO: this is for pps, do the same for bps
-   src.pps_tokens = src.pps_tokens - 1
-   if src.pps_tokens <= 0 then
+   if src.pps_tokens and src.pps_tokens <= 0 or src.bps_tokens and src.bps_tokens <= 0 then
       src.block_until = cur_now + self.block_period
       self.blocklist[src_ip] = { action = "block", block_until = cur_now + self.block_period-5}
       packet.deref(p)
    else
       link.transmit(o, p)
    end
+
+   src.last_time = cur_now
 end
 
 
@@ -158,8 +167,9 @@ function DDoS:get_src(rule_match, src_ip)
          pps_rate = self.rules[rule_match].pps_rate,
          pps_tokens = self.rules[rule_match].pps_burst,
          pps_capacity = self.rules[rule_match].pps_burst,
-         bucket_content = self.bucket_capacity,
-         bucket_capacity = self.bucket_capacity,
+         bps_rate = self.rules[rule_match].bps_rate,
+         bps_tokens = self.rules[rule_match].bps_burst,
+         bps_capacity = self.rules[rule_match].bps_burst,
          block_until = nil
       }
    end
@@ -180,7 +190,8 @@ function DDoS:report()
    end
    print("Traffic rules:")
    for rule_name,rule in pairs(self.rules) do
-      print(" - " .. rule_name .. " [ " .. rule.filter .. " ]  pps_rate: " .. rule.pps_rate)
+      print(" - Rule " .. rule_name .. " rate: " .. (rule.pps_rate or "-") .. "pps / " .. (rule.bps_rate or "-") .. "bps")
+      print("   Filter: " .. rule.filter)
       for src_ip,src_info in pairs(rule.srcs) do
          -- calculate rate of packets
          if self.blocklist[src_ip] ~= nil then
@@ -189,7 +200,10 @@ function DDoS:report()
             rate = "    -"
          else
             -- TODO: calculate real PPS rate
-            rate = string.format("%5.0f", src_info.pps_tokens)
+            rate = "    -"
+            if src_info.pps_tokens then
+               rate = string.format("%5.0f", src_info.pps_tokens )
+            end
          end
          str = string.format("  %15s last: %d tokens: %s ", src_ip, tonumber(app.now())-src_info.last_time, rate)
          if src_info.block_until == nil then
