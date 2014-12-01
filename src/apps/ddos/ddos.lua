@@ -99,13 +99,13 @@ function DDoS:push ()
          else
             local cur_now = tonumber(app.now())
             src = self:get_src(rule_match, src_ip)
-            src.last_time = cur_now
 
             -- figure out rates n shit
             src.pps_tokens = math.max(0,math.min(
                   src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
                   src.pps_capacity
                ))
+            src.last_time = cur_now
 
             -- TODO: this is for pps, do the same for bps
             src.pps_tokens = src.pps_tokens - 1
@@ -140,7 +140,7 @@ function DDoS:get_src(rule_match, src_ip)
    -- TODO: we need to periodically clean this data struct up so it doesn't just fill up and consume all memory
    if self.rules[rule_match].srcs[src_ip] == nil then
       self.rules[rule_match].srcs[src_ip] = {
-         last_time = nil,
+         last_time = tonumber(app.now()),
          pps_rate = self.rules[rule_match].pps_rate,
          pps_tokens = self.rules[rule_match].pps_burst,
          pps_capacity = self.rules[rule_match].pps_burst,
@@ -155,6 +155,10 @@ end
 
 function DDoS:report()
    print("-- DDoS report --")
+   local s_i = link.stats(self.input.input)
+   local s_o = link.stats(self.output.output)
+   print("Rx: " .. s_i.rxpackets .. " packets / " .. s_i.rxbytes .. " bytes")
+   print("Tx: " .. s_o.txpackets .. " packets / " .. s_o.txbytes .. " bytes / " .. s_o.txdrop .. " packet drops")
    print("Configured block period: " .. self.block_period .. " seconds")
    print("Block list:")
    for src_ip,blocklist in pairs(self.blocklist) do
