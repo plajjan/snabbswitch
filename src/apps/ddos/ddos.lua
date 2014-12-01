@@ -1,23 +1,19 @@
 module(..., package.seeall)
 
 local app = require("core.app")
-local packet = require("core.packet")
-local link = require("core.link")
-local ipv4 = require("lib.protocol.ipv4")
-local filter = require("lib.pcap.filter")
 local buffer = require("core.buffer")
-local lib = require("core.lib")
-
 local datagram = require("lib.protocol.datagram")
-
 local ffi = require("ffi")
-
-local ETHERTYPE_OFFSET = 12
-
-local ETHERTYPE_IPV6 = 0xDD86
-local ETHERTYPE_IPV4 = 0x0008
+local filter = require("lib.pcap.filter")
+local ipv4 = require("lib.protocol.ipv4")
+local lib = require("core.lib")
+local link = require("core.link")
+local packet = require("core.packet")
 
 local AF_INET = 2
+local ETHERTYPE_OFFSET = 12
+local ETHERTYPE_IPV6 = 0xDD86
+local ETHERTYPE_IPV4 = 0x0008
 
 DDoS = {}
 
