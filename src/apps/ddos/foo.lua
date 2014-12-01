@@ -84,8 +84,8 @@ function run (args)
    timer.activate(timer.new(
       "report",
       function()
---          app.app_table["ddos"]:report()
-        app.report_each_app()
+          app.app_table["ddos"]:report()
+--        app.report_each_app()
       end,
       1e9,
       'repeating'
