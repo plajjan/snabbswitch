@@ -5,7 +5,7 @@ local buffer    = require("core.buffer")
 local config    = require("core.config")
 local timer     = require("core.timer")
 local pci       = require("lib.hardware.pci")
-local intel10g	= require("apps.intel.intel10g")
+local intel10g  = require("apps.intel.intel10g")
 local intel_app = require("apps.intel.intel_app")
 local basic_apps = require("apps.basic.basic_apps")
 local main      = require("core.main")
@@ -70,7 +70,7 @@ function run (args)
          bps_burst = nil
       }
    }
-   config.app(c, "ddos", DDoS, { rules = rules, block_period = 20 })
+   config.app(c, "ddos", DDoS, { rules = rules, block_period = 60, max_block_period = 600 })
 
    config.link(c, "nic0.tx -> ddos.input")
    config.link(c, "ddos.output -> nic1.rx")
@@ -84,8 +84,8 @@ function run (args)
    timer.activate(timer.new(
       "report",
       function()
---          app.app_table["ddos"]:report()
-        app.report_each_app()
+          app.app_table["ddos"]:report()
+--          app.report_each_app()
       end,
       1e9,
       'repeating'
