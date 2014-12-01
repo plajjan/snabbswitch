@@ -97,45 +97,26 @@ function DDoS:push ()
          -- didn't match any rule, so permit it
          if rule_match == nil then
             link.transmit(o, p)
-            -- TODO: potential slow down due to return?
-            return
-         end
-
-         local cur_now = tonumber(app.now())
-         -- get our data struct on that source IP
-         -- TODO: we need to periodically clean this data struct up so it doesn't just fill up and consume all memory
-         if self.rules[rule_match].srcs[src_ip] == nil then
-            self.rules[rule_match].srcs[src_ip] = {
-               last_time = cur_now,
-               pps_rate = self.rules[rule_match].pps_rate,
-               pps_tokens = self.rules[rule_match].pps_burst,
-               pps_capacity = self.rules[rule_match].pps_burst,
-               bucket_content = self.bucket_capacity,
-               bucket_capacity = self.bucket_capacity,
-               block_until = nil
-               }
-         end
-         local src = self.rules[rule_match].srcs[src_ip]
-
-         -- figure out rates n shit
-         src.pps_tokens = math.max(0,math.min(
-               src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
-               src.pps_capacity
-            ))
-         src.last_time = cur_now
-
-         -- TODO: this is for pps, do the same for bps
-         src.pps_tokens = src.pps_tokens - 1
-         if src.pps_tokens <= 0 then
-            src.block_until = cur_now + self.block_period
-            self.blocklist[src_ip] = { action = "block", block_until = cur_now + self.block_period-5}
-         end
-
-
-         if src.block_until ~= nil then
-            packet.deref(p)
          else
-            link.transmit(o, p)
+            local cur_now = tonumber(app.now())
+            src = self:get_src(rule_match, src_ip)
+            src.last_time = cur_now
+
+            -- figure out rates n shit
+            src.pps_tokens = math.max(0,math.min(
+                  src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
+                  src.pps_capacity
+               ))
+
+            -- TODO: this is for pps, do the same for bps
+            src.pps_tokens = src.pps_tokens - 1
+            if src.pps_tokens <= 0 then
+               src.block_until = cur_now + self.block_period
+               self.blocklist[src_ip] = { action = "block", block_until = cur_now + self.block_period-5}
+               packet.deref(p)
+            else
+               link.transmit(o, p)
+            end
          end
       end
    end
@@ -152,6 +133,24 @@ function DDoS:bpf_match(p)
       end
    end
    return nil
+end
+
+
+function DDoS:get_src(rule_match, src_ip)
+   -- get our data struct on that source IP
+   -- TODO: we need to periodically clean this data struct up so it doesn't just fill up and consume all memory
+   if self.rules[rule_match].srcs[src_ip] == nil then
+      self.rules[rule_match].srcs[src_ip] = {
+         last_time = nil,
+         pps_rate = self.rules[rule_match].pps_rate,
+         pps_tokens = self.rules[rule_match].pps_burst,
+         pps_capacity = self.rules[rule_match].pps_burst,
+         bucket_content = self.bucket_capacity,
+         bucket_capacity = self.bucket_capacity,
+         block_until = nil
+      }
+   end
+   return self.rules[rule_match].srcs[src_ip]
 end
 
 
