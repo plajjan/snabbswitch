@@ -70,15 +70,14 @@ function run (args)
          bps_burst = nil
       }
    }
---   config.app(c, "ddos", DDoS, { rules = rules, block_period = 20 })
---
---   config.link(c, "nic0.tx -> ddos.input")
---   config.link(c, "ddos.output -> nic1.rx")
+   config.app(c, "ddos", DDoS, { rules = rules, block_period = 20 })
 
-   config.app(c, "poc", PoC, { rules = rules, block_period = 20 })
-   config.app(c, "sink", basic_apps.Sink, {})
-   config.link(c, "nic0.tx -> poc.input")
-   config.link(c, "poc.output -> nic1.rx")
+   config.link(c, "nic0.tx -> ddos.input")
+   config.link(c, "ddos.output -> nic1.rx")
+
+--   config.app(c, "poc", PoC, { rules = rules, block_period = 20 })
+--   config.link(c, "nic0.tx -> poc.input")
+--   config.link(c, "poc.output -> nic1.rx")
 
    app.configure(c)
 
