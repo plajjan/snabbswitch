@@ -194,16 +194,12 @@ function DDoS:report()
       print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule_name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
       for src_ip,src_info in pairs(rule.srcs) do
          -- calculate rate of packets
-         if self.blocklist[src_ip] ~= nil then
+         -- TODO: calculate real PPS rate
+         rate = string.format("%5s", "-")
+         if self.blocklist[src_ip] == nil then
             -- if source is in blocklist it means we shortcut and thus don't
             -- calculate pps, so we write '-'
-            rate = "    -"
-         else
-            -- TODO: calculate real PPS rate
-            rate = "    -"
-            if src_info.pps_tokens then
-               rate = string.format("%5.0f", src_info.pps_tokens )
-            end
+            rate = string.format("%5.0f", src_info.pps_tokens )
          end
          str = string.format("  %15s last: %d tokens: %s ", src_ip, tonumber(app.now())-src_info.last_time, rate)
          if src_info.block_until == nil then
