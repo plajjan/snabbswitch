@@ -44,7 +44,7 @@ function DDoS:new (arg)
    timer.activate(timer.new(
       "periodic",
       function () self:periodic() end,
-      1e10, -- every 10 seconds
+      1e9, -- every second
       'repeating'
    ))
    return self
@@ -78,12 +78,13 @@ function DDoS:push ()
       local src_ip = ipv4:ntop(iovec.buffer.pointer + iovec.offset + 26)
 
       -- short cut for stuff in blocklist that is in state block
-      if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
+      --if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
+      if self.blocklist[src_ip] ~= nil then
          -- TODO: this is weird. When this "shortcut" is enabled we lower CPU
          -- usage but legitimate traffic that shouldn't be blacklisted is dropped
          -- as well, why?
-         --packet.deref(p)
-         --return
+         packet.deref(p)
+         return
       end
 
       dgram = datagram:new(p)
@@ -164,7 +165,7 @@ function DDoS:report()
             -- TODO: calculate real PPS rate
             rate = string.format("%5.0f", src_info.pps_tokens)
          end
-         str = string.format("  %15s tokens: %s ", src_ip, rate)
+         str = string.format("  %15s last: %d tokens: %s ", src_ip, tonumber(app.now())-src_info.last_time, rate)
          if src_info.block_until == nil then
             str = string.format("%s %-7s", str, "allowed")
          else
