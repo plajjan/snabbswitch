@@ -58,6 +58,15 @@ function DDoS:periodic()
          self.blocklist[src_ip] = nil
       end
    end
+
+   for rule_name,rule in pairs(self.rules) do
+      print(" - " .. rule_name .. " [ " .. rule.filter .. " ]  pps_rate: " .. rule.pps_rate)
+      for src_ip,src_info in pairs(rule.srcs) do
+         if src_info.block_until ~= nil and src_info.block_until < tonumber(app.now()) then
+            src_info.block_until = nil
+         end
+      end
+   end
 end
 
 
@@ -118,13 +127,10 @@ function DDoS:push ()
          -- TODO: this is for pps, do the same for bps
          src.pps_tokens = src.pps_tokens - 1
          if src.pps_tokens <= 0 then
-            src.block_until = tonumber(app.now()) + self.block_period
-            self.blocklist[src_ip] = { action = "block", block_until = tonumber(app.now()) + self.block_period-5}
+            src.block_until = cur_now + self.block_period
+            self.blocklist[src_ip] = { action = "block", block_until = cur_now + self.block_period-5}
          end
 
-         if src.block_until ~= nil and src.block_until < tonumber(app.now()) then
-            src.block_until = nil
-         end
 
          if src.block_until ~= nil then
             packet.deref(p)
@@ -134,6 +140,7 @@ function DDoS:push ()
       end
    end
 end
+
 
 -- match against our BPF rules and return name of the match
 function DDoS:bpf_match(p)
@@ -146,6 +153,7 @@ function DDoS:bpf_match(p)
    end
    return nil
 end
+
 
 function DDoS:report()
    print("-- DDoS report --")
