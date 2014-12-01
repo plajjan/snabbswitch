@@ -64,10 +64,10 @@ function run (args)
       },
       ntp = {
          filter = "udp and src port 123",
-         pps_rate = 1,
-         pps_burst = 2,
-         bps_rate = nil,
-         bps_burst = nil
+         pps_rate = nil,
+         pps_burst = nil,
+         bps_rate = 10000,
+         bps_burst = 20000
       }
    }
    config.app(c, "ddos", DDoS, { rules = rules, block_period = 60, max_block_period = 600 })
