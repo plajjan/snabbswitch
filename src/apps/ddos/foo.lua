@@ -70,22 +70,23 @@ function run (args)
          bps_burst = nil
       }
    }
-   config.app(c, "ddos", DDoS, { rules = rules, block_period = 20 })
+--   config.app(c, "ddos", DDoS, { rules = rules, block_period = 20 })
+--
+--   config.link(c, "nic0.tx -> ddos.input")
+--   config.link(c, "ddos.output -> nic1.rx")
 
-   config.link(c, "nic0.tx -> ddos.input")
-   config.link(c, "ddos.output -> nic1.rx")
-
---   config.app(c, "poc", PoC, { rules = rules, block_period = 20 })
---   config.link(c, "nic0.tx -> poc.input")
---   config.link(c, "poc.output -> nic1.rx")
+   config.app(c, "poc", PoC, { rules = rules, block_period = 20 })
+   config.app(c, "sink", basic_apps.Sink, {})
+   config.link(c, "nic0.tx -> poc.input")
+   config.link(c, "poc.output -> nic1.rx")
 
    app.configure(c)
 
    timer.activate(timer.new(
       "report",
       function()
-          app.app_table["ddos"]:report()
---        app.report_each_app()
+--          app.app_table["ddos"]:report()
+        app.report_each_app()
       end,
       1e9,
       'repeating'
