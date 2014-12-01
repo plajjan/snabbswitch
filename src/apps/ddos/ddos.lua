@@ -77,47 +77,53 @@ function DDoS:push ()
    -- TODO: need to write ethernet headers on egress to match the MAC address of our "default gateway"
 
    while not link.empty(i) and not link.full(o) do
-      local p = link.receive(i)
-      local iovec = p.iovecs[0]
+      self:process_packet(i, o)
+   end
+end
 
-      -- dig out src IP from packet
-      -- TODO: do we really need to do ntop on this? is that an expensive operation?
-      -- TODO: don't use a fixed offset - it'll break badly on non-IPv4 packet :/
-      local src_ip = ipv4:ntop(iovec.buffer.pointer + iovec.offset + 26)
 
-      -- short cut for stuff in blocklist that is in state block
-      if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
-         packet.deref(p)
-      else
+function DDoS:process_packet(i, o)
+   local p = link.receive(i)
+   local iovec = p.iovecs[0]
 
-         dgram = datagram:new(p)
-         -- match up against our filter rules
-         local rule_match = self:bpf_match(p)
-         -- didn't match any rule, so permit it
-         if rule_match == nil then
-            link.transmit(o, p)
-         else
-            local cur_now = tonumber(app.now())
-            src = self:get_src(rule_match, src_ip)
+   -- dig out src IP from packet
+   -- TODO: do we really need to do ntop on this? is that an expensive operation?
+   -- TODO: don't use a fixed offset - it'll break badly on non-IPv4 packet :/
+   local src_ip = ipv4:ntop(iovec.buffer.pointer + iovec.offset + 26)
 
-            -- figure out rates n shit
-            src.pps_tokens = math.max(0,math.min(
-                  src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
-                  src.pps_capacity
-               ))
-            src.last_time = cur_now
+   -- short cut for stuff in blocklist that is in state block
+   if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
+      packet.deref(p)
+      return
+   end
 
-            -- TODO: this is for pps, do the same for bps
-            src.pps_tokens = src.pps_tokens - 1
-            if src.pps_tokens <= 0 then
-               src.block_until = cur_now + self.block_period
-               self.blocklist[src_ip] = { action = "block", block_until = cur_now + self.block_period-5}
-               packet.deref(p)
-            else
-               link.transmit(o, p)
-            end
-         end
-      end
+   dgram = datagram:new(p)
+   -- match up against our filter rules
+   local rule_match = self:bpf_match(p)
+   -- didn't match any rule, so permit it
+   if rule_match == nil then
+      link.transmit(o, p)
+      return
+   end
+
+   local cur_now = tonumber(app.now())
+   src = self:get_src(rule_match, src_ip)
+
+   -- figure out rates n shit
+   src.pps_tokens = math.max(0,math.min(
+         src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
+         src.pps_capacity
+      ))
+   src.last_time = cur_now
+
+   -- TODO: this is for pps, do the same for bps
+   src.pps_tokens = src.pps_tokens - 1
+   if src.pps_tokens <= 0 then
+      src.block_until = cur_now + self.block_period
+      self.blocklist[src_ip] = { action = "block", block_until = cur_now + self.block_period-5}
+      packet.deref(p)
+   else
+      link.transmit(o, p)
    end
 end
 
