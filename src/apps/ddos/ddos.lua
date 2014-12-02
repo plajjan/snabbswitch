@@ -86,8 +86,9 @@ end
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
 
-   -- TODO: don't use ntop to convert source IP to a string and base hash lookup on a string. Use a radix trie or similar instead on the IP directly
    -- dig out src IP from packet
+   -- TODO: don't use ntop to convert IP to a string and base hash lookup on a
+   -- string - use a radix trie or similar instead!
    d = self.d:reuse(p, ethernet)
    d:parse_n(2)
    d:unparse(2)
