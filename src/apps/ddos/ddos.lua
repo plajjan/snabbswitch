@@ -86,8 +86,7 @@ end
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
 
-   -- TODO: do we really need to do ntop on this? is that an expensive operation?
-
+   -- TODO: don't use ntop to convert source IP to a string and base hash lookup on a string. Use a radix trie or similar instead on the IP directly
    -- dig out src IP from packet
    d = self.d:reuse(p, ethernet)
    d:parse_n(2)
@@ -120,6 +119,7 @@ function DDoS:process_packet(i, o)
    src = self:get_src(rule_match, src_ip)
 
    -- figure out rates
+   -- uses http://en.wikipedia.org/wiki/Token_bucket algorithm
    if src.pps_tokens then
       src.pps_tokens = math.max(0,math.min(
             src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
@@ -195,13 +195,13 @@ function DDoS:report()
       for src_ip,src_info in pairs(rule.srcs) do
          -- calculate rate of packets
          -- TODO: calculate real PPS rate
-         rate = string.format("%5s", "-")
-         if self.blocklist[src_ip] == nil then
-            -- if source is in blocklist it means we shortcut and thus don't
-            -- calculate pps, so we write '-'
-            rate = string.format("%5.0f", src_info.pps_tokens )
+         pps_tokens = string.format("%5s", "-")
+         -- if source is in blocklist it means we shortcut and thus don't
+         -- calculate pps, so we write '-'
+         if self.blocklist[src_ip] == nil and src_info.pps_tokens then
+            pps_tokens = string.format("%5.0f", src_info.pps_tokens )
          end
-         str = string.format("  %15s last: %d tokens: %s ", src_ip, tonumber(app.now())-src_info.last_time, rate)
+         str = string.format("  %15s last: %d tokens: %s ", src_ip, tonumber(app.now())-src_info.last_time, pps_tokens)
          if src_info.block_until == nil then
             str = string.format("%s %-7s", str, "allowed")
          else
