@@ -214,3 +214,50 @@ function DDoS:report()
 end
 
 
+-- return statistics snapshot
+function DDoS:get_stat_snapshot ()
+   return
+   {
+      rxpackets = self.input.input.stats.txpackets,
+      txpackets = self.output.output.stats.txpackets,
+      time = tonumber(C.get_time_ns()),
+   }
+end
+
+
+function selftest()
+   local pcap = require("apps.pcap.pcap")
+   local basic_apps = require("apps.basic.basic_apps")
+
+   print("Rate limiter selftest")
+   buffer.preallocate(10000)
+
+   local rules = {
+      icmp = {
+         filter = "icmp",
+         pps_rate = nil,
+         pps_burst = nil,
+         bps_rate = 10,
+         bps_burst = 20
+      },
+      ntp = {
+         filter = "udp and src port 123",
+         pps_rate = nil,
+         pps_burst = nil,
+         bps_rate = 10000,
+         bps_burst = 20000
+      }
+   }
+   
+   local c = config.new()
+   config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
+   config.app(c, "ddos", DDoS, { rules = rules, block_period = 60 })
+   config.app(c, "sink", basic_apps.Sink)
+
+   config.link(c, "source.output -> ddos.input")
+   config.link(c, "ddos.output -> sink.input")
+   app.configure(c)
+
+   local ddos_app = app.app_table.ddos
+
+end
