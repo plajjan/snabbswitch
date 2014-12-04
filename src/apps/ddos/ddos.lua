@@ -18,7 +18,6 @@ DDoS = {}
 
 -- I don't know what I'm doing
 function DDoS:new (arg)
-   print("-- DDoS Init --")
    local conf = arg and config.parse_app_arg(arg) or {}
    assert(conf.block_period >= 5, "block_period must be at least 5 seconds")
    local o =
@@ -54,7 +53,6 @@ end
 
 function DDoS:periodic()
    for src_ip, blocklist in pairs(self.blocklist) do
-      print("Checking block for: " .. src_ip)
       if blocklist.block_until < tonumber(app.now()) then
          self.blocklist[src_ip] = nil
       end
