@@ -54,17 +54,17 @@ function DDoS:new (arg)
    self.d = datagram:new()
 
    -- prepare headers for matching
-   local header_v4 = etherheader_array_ctype(HEADER_SIZE)
-   header_v4[ETHERTYPE_OFFSET] = 0x08
-   header_v4[ETHERTYPE_OFFSET+1] = 0x00
+   self.header_v4 = etherheader_array_ctype(HEADER_SIZE)
+   self.header_v4[ETHERTYPE_OFFSET] = 0x08
+   self.header_v4[ETHERTYPE_OFFSET+1] = 0x00
 
-   local header_v6 = etherheader_array_ctype(HEADER_SIZE)
-   header_v6[ETHERTYPE_OFFSET] = 0x86
-   header_v6[ETHERTYPE_OFFSET+1] = 0xDD
+   self.header_v6 = etherheader_array_ctype(HEADER_SIZE)
+   self.header_v6[ETHERTYPE_OFFSET] = 0x86
+   self.header_v6[ETHERTYPE_OFFSET+1] = 0xDD
 
    -- store casted pointers for fast matching
-   self.ethertype_ipv4 = ffi.cast(pethertype_ctype, header_v4 + ETHERTYPE_OFFSET)
-   self.ethertype_ipv6 = ffi.cast(pethertype_ctype, header_v6 + ETHERTYPE_OFFSET)
+   self.ethertype_ipv4 = ffi.cast(pethertype_ctype, self.header_v4 + ETHERTYPE_OFFSET)
+   self.ethertype_ipv6 = ffi.cast(pethertype_ctype, self.header_v6 + ETHERTYPE_OFFSET)
 
    -- schedule periodic task every second
    timer.activate(timer.new(
