@@ -14,18 +14,6 @@ local packet = require("core.packet")
 
 local C = ffi.C
 
-local etherheader_struct_ctype = ffi.typeof[[
-struct {
-   // ethernet
-   char dmac[6];
-   char smac[6];
-   uint16_t ethertype;
-}]]
-local HEADER_SIZE = ffi.sizeof(etherheader_struct_ctype)
-local ETHERTYPE_OFFSET = ffi.offsetof(etherheader_struct_ctype, 'ethertype')
-local etherheader_array_ctype = ffi.typeof("uint8_t[?]")
-local pethertype_ctype = ffi.typeof("uint16_t*")
-
 DDoS = {}
 
 -- I don't know what I'm doing
@@ -57,18 +45,9 @@ function DDoS:new (arg)
    -- datagram object for reuse
    self.d = datagram:new()
 
-   -- prepare headers for matching
-   self.header_v4 = etherheader_array_ctype(HEADER_SIZE)
-   self.header_v4[ETHERTYPE_OFFSET] = 0x08
-   self.header_v4[ETHERTYPE_OFFSET+1] = 0x00
-
-   self.header_v6 = etherheader_array_ctype(HEADER_SIZE)
-   self.header_v6[ETHERTYPE_OFFSET] = 0x86
-   self.header_v6[ETHERTYPE_OFFSET+1] = 0xDD
-
-   -- store casted pointers for fast matching
-   self.ethertype_ipv4 = ffi.cast(pethertype_ctype, self.header_v4 + ETHERTYPE_OFFSET)
-   self.ethertype_ipv6 = ffi.cast(pethertype_ctype, self.header_v6 + ETHERTYPE_OFFSET)
+   -- store casted ethertypes for fast matching
+   self.ethertype_ipv4 = ffi.cast("uint16_t", 8)
+   self.ethertype_ipv6 = ffi.cast("uint16_t", 56710)
 
    -- schedule periodic task every second
    timer.activate(timer.new(
@@ -117,12 +96,14 @@ function DDoS:process_packet(i, o)
    local afi
 
    -- dig out src IP from packet
-   local ethertype = ffi.cast(pethertype_ctype, iov.buffer.pointer + iov.offset + 12)
+   -- TODO: don't use ntop to convert IP to a string and base hash lookup on a
+   -- string - use a radix trie or similar instead!
+   local ethertype = ffi.cast("uint16_t*", iov.buffer.pointer + iov.offset + 12)[0]
    local src_ip
-   if ethertype[0] == self.ethertype_ipv4[0] then
+   if ethertype == self.ethertype_ipv4 then
       afi = "ipv4"
       src_ip = ffi.cast("uint32_t*", iov.buffer.pointer + iov.offset + 26)[0]
-   elseif ethertype[0] == self.ethertype_ipv6[0] then
+   elseif ethertype == self.ethertype_ipv6 then
       afi = "ipv6"
       -- TODO: this is slow, do something similar to IPv4
       src_ip = ipv6:ntop(iov.buffer.pointer + iov.offset + 22)
