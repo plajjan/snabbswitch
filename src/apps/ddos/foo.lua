@@ -13,7 +13,6 @@ local PcapReader= require("apps.pcap.pcap").PcapReader
 local LoadGen   = require("apps.intel.loadgen").LoadGen
 
 local DDoS = require("apps.ddos.ddos").DDoS
-local PoC = require("apps.ddos.poc").PoC
 
 local ffi = require("ffi")
 local C = ffi.C
