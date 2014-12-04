@@ -134,7 +134,7 @@ function DDoS:process_packet(i, o)
       src.bps_tokens = src.bps_tokens - p.length
    end
 
-   if src.pps_tokens and src.pps_tokens <= 0 or src.bps_tokens and src.bps_tokens <= 0 then
+   if src.pps_tokens and src.pps_tokens < 0 or src.bps_tokens and src.bps_tokens < 0 then
       src.block_until = cur_now + self.block_period
       self.blocklist[src_ip] = { action = "block", block_until = cur_now + self.block_period-5}
       packet.deref(p)
