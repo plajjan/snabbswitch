@@ -224,40 +224,63 @@ end
 
 
 function selftest()
+   print("DDoS selftest")
+
+   local ok = true
+   test_logic()
+
+end
+
+
+function test_logic()
    local pcap = require("apps.pcap.pcap")
    local basic_apps = require("apps.basic.basic_apps")
 
-   print("DDoS selftest")
    buffer.preallocate(10000)
 
    local rules = {
-      icmp = {
-         filter = "icmp",
-         pps_rate = nil,
-         pps_burst = nil,
-         bps_rate = 10,
-         bps_burst = 20
-      },
       ntp = {
          filter = "udp and src port 123",
-         pps_rate = nil,
-         pps_burst = nil,
-         bps_rate = 10000,
-         bps_burst = 20000
+         pps_rate = 10,
+         pps_burst = 20,
+         bps_rate = nil,
+         bps_burst = nil
       }
    }
    
    local c = config.new()
    config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
    config.app(c, "ddos", DDoS, { rules = rules, block_period = 60 })
-   config.app(c, "repeater", basic_apps.FastRepeater)
-   config.app(c, "sink", basic_apps.FastSink)
-
-   config.link(c, "source.output -> repeater.input")
-   config.link(c, "repeater.output -> ddos.input")
+   config.app(c, "sink", pcap.PcapWriter, "apps/ddos/selftest.cap.output")
+   config.link(c, "source.output -> ddos.input")
    config.link(c, "ddos.output -> sink.input")
    app.configure(c)
 
+   local ok = true
+
+   -- the input pcap contains five ICMP packets and 31995 NTP packets
+   --
+   -- this first test has a rule for matching NTP packets with a threshold of 10pps and 20 burst
+   -- all ICMP packets should pass through while only 20 NTP packets (the burst) are allowed
+   print("test packet forwarding logic")
+   print("NTP packets should be blocked, except for first 20 which fit in burst")
+   app.main({duration = 5}) -- should be long enough...
+   -- Check results
+   if io.open("apps/ddos/selftest.cap.output"):read('*a') ~=
+      io.open("apps/ddos/selftest.cap.expect-1"):read('*a') then
+      print([[file selftest.cap.output does not match selftest.cap.expect.
+      Check for the mismatch like this (example):
+      tshark -Vnr apps/ddos/selftest.cap.output > /tmp/selftest.cap.output.txt
+      tshark -Vnr apps/ddos/selftest.cap.expect-1 > /tmp/selftest.cap.expect-1.txt
+      diff -u /tmp/selftest.cap.{output,expect-1}.txt | less ]])
+      ok = false
+   else
+      print("Logic test passed!")
+   end
+
+end
+
+function test_performance()
    local ddos_app = app.app_table.ddos
 
    local seconds_to_run = 5
@@ -270,7 +293,9 @@ function selftest()
          'repeating'
       ))
 
+
    do
+      print("\ntest performance")
       while seconds_to_run > 0 do
          app.breathe()
          timer.run()
@@ -285,5 +310,4 @@ function selftest()
    print("source sent: " .. app.app_table.source.output.output.stats.txpackets)
    print("repeater sent: " .. app.app_table.repeater.output.output.stats.txpackets)
    print("sink received: " .. app.app_table.sink.input.input.stats.rxpackets)
-
 end
