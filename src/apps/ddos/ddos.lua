@@ -247,7 +247,7 @@ function test_logic()
          bps_burst = nil
       }
    }
-   
+
    local c = config.new()
    config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
    config.app(c, "ddos", DDoS, { rules = rules, block_period = 60 })
@@ -258,12 +258,12 @@ function test_logic()
 
    local ok = true
 
-   -- the input pcap contains five ICMP packets and 31995 NTP packets
-   --
-   -- this first test has a rule for matching NTP packets with a threshold of 10pps and 20 burst
-   -- all ICMP packets should pass through while only 20 NTP packets (the burst) are allowed
-   print("test packet forwarding logic")
-   print("NTP packets should be blocked, except for first 20 which fit in burst")
+   -- the input pcap contains five ICMP packets from one source and 31995 NTP
+   -- packets from another source
+
+   print("== Logic test - matching NTP")
+   print("  Rule for NTP packets with threshold of 10pps/20p burst, rest is allowed")
+   print("  we should see a total of 25 packets = 5 ICMP (allowed) + 20 NTP (burst)")
    app.main({duration = 5}) -- should be long enough...
    -- Check results
    if io.open("apps/ddos/selftest.cap.output"):read('*a') ~=
@@ -277,6 +277,8 @@ function test_logic()
    else
       print("Logic test passed!")
    end
+
+   return ok
 
 end
 
