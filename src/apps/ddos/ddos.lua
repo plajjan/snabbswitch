@@ -14,6 +14,18 @@ local packet = require("core.packet")
 
 local C = ffi.C
 
+local etherheader_struct_ctype = ffi.typeof[[
+struct {
+   // ethernet
+   char dmac[6];
+   char smac[6];
+   uint16_t ethertype;
+}]]
+local HEADER_SIZE = ffi.sizeof(etherheader_struct_ctype)
+local ETHERTYPE_OFFSET = ffi.offsetof(etherheader_struct_ctype, 'ethertype')
+local etherheader_array_ctype = ffi.typeof("uint8_t[?]")
+local pethertype_ctype = ffi.typeof("uint16_t*")
+
 DDoS = {}
 
 -- I don't know what I'm doing
@@ -38,7 +50,21 @@ function DDoS:new (arg)
       rule.cfilter = filter
    end
 
+   -- datagram object for reuse
    self.d = datagram:new()
+
+   -- prepare headers for matching
+   local header_v4 = etherheader_array_ctype(HEADER_SIZE)
+   header_v4[ETHERTYPE_OFFSET] = 0x08
+   header_v4[ETHERTYPE_OFFSET+1] = 0x00
+
+   local header_v6 = etherheader_array_ctype(HEADER_SIZE)
+   header_v6[ETHERTYPE_OFFSET] = 0x86
+   header_v6[ETHERTYPE_OFFSET+1] = 0xDD
+
+   -- store casted pointers for fast matching
+   self.ethertype_ipv4 = ffi.cast(pethertype_ctype, header_v4 + ETHERTYPE_OFFSET)
+   self.ethertype_ipv6 = ffi.cast(pethertype_ctype, header_v6 + ETHERTYPE_OFFSET)
 
    -- schedule periodic task every second
    timer.activate(timer.new(
@@ -83,20 +109,19 @@ end
 
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
+   local iov = p.iovecs[0]
 
    -- dig out src IP from packet
    -- TODO: don't use ntop to convert IP to a string and base hash lookup on a
    -- string - use a radix trie or similar instead!
-   d = self.d:reuse(p, ethernet)
-   d:parse_n(2)
-   d:unparse(2)
-   local eth, ip = unpack(d:stack())
+   local ethertype = ffi.cast(pethertype_ctype, iov.buffer.pointer + iov.offset + 12)
    local src_ip
-   if eth:type() == 0x0800 then
-      src_ip = ipv4:ntop(ip:src())
-   elseif eth:type() == 0x86dd then
-      src_ip = ipv6:ntop(ip:src())
+   if ethertype[0] == self.ethertype_ipv4[0] then
+      src_ip = ipv4:ntop(iov.buffer.pointer + iov.offset + 26)
+   elseif ethertype[0] == self.ethertype_ipv6[0] then
+      src_ip = ipv6:ntop(iov.buffer.pointer + iov.offset + 22)
    else
+      packet.deref(p)
       return
    end
 
@@ -105,6 +130,8 @@ function DDoS:process_packet(i, o)
       packet.deref(p)
       return
    end
+
+   d = self.d:reuse(p, ethernet)
 
    -- match up against our filter rules
    local rule_match = self:bpf_match(d)
