@@ -229,7 +229,7 @@ function selftest()
    local pcap = require("apps.pcap.pcap")
    local basic_apps = require("apps.basic.basic_apps")
 
-   print("Rate limiter selftest")
+   print("DDoS selftest")
    buffer.preallocate(10000)
 
    local rules = {
@@ -252,12 +252,40 @@ function selftest()
    local c = config.new()
    config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
    config.app(c, "ddos", DDoS, { rules = rules, block_period = 60 })
-   config.app(c, "sink", basic_apps.Sink)
+   config.app(c, "repeater", basic_apps.FastRepeater)
+   config.app(c, "sink", basic_apps.FastSink)
 
-   config.link(c, "source.output -> ddos.input")
+   config.link(c, "source.output -> repeater.input")
+   config.link(c, "repeater.output -> ddos.input")
    config.link(c, "ddos.output -> sink.input")
    app.configure(c)
 
    local ddos_app = app.app_table.ddos
+
+   local seconds_to_run = 5
+   timer.activate(timer.new(
+         "report",
+         function ()
+            seconds_to_run = seconds_to_run - 1
+         end,
+         1e9, -- every second
+         'repeating'
+      ))
+
+   do
+      while seconds_to_run > 0 do
+         app.breathe()
+         timer.run()
+         C.usleep(10) -- avoid busy loop
+      end
+   end
+
+--   for key,value in pairs({ source = true }) do
+--	   print("MODULE:" .. key)
+--   end
+   app.report()
+   print("source sent: " .. app.app_table.source.output.output.stats.txpackets)
+   print("repeater sent: " .. app.app_table.repeater.output.output.stats.txpackets)
+   print("sink received: " .. app.app_table.sink.input.input.stats.rxpackets)
 
 end
