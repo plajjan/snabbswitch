@@ -35,6 +35,10 @@ function DDoS:new (arg)
    local o =
    {
       blocklist = {},
+      blacklist = {
+         ipv4 = {},
+         ipv6 = {}
+      },
       rules = conf.rules,
       block_period = conf.block_period
    }
@@ -110,23 +114,27 @@ end
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
    local iov = p.iovecs[0]
+   local afi
 
    -- dig out src IP from packet
-   -- TODO: don't use ntop to convert IP to a string and base hash lookup on a
-   -- string - use a radix trie or similar instead!
    local ethertype = ffi.cast(pethertype_ctype, iov.buffer.pointer + iov.offset + 12)
    local src_ip
    if ethertype[0] == self.ethertype_ipv4[0] then
-      src_ip = ipv4:ntop(iov.buffer.pointer + iov.offset + 26)
+      afi = "ipv4"
+      src_ip = ffi.cast("uint32_t*", iov.buffer.pointer + iov.offset + 26)[0]
    elseif ethertype[0] == self.ethertype_ipv6[0] then
+      afi = "ipv6"
+      -- TODO: this is slow, do something similar to IPv4
       src_ip = ipv6:ntop(iov.buffer.pointer + iov.offset + 22)
    else
       packet.deref(p)
       return
    end
 
-   -- short cut for stuff in blocklist that is in state block
-   if self.blocklist[src_ip] ~= nil and self.blocklist[src_ip].action == "block" then
+   -- short cut for stuff in blacklist that is in state block
+   -- TODO: blacklist is a table. use a Radix trie instead!
+   local ble = self.blacklist[afi][src_ip]
+   if ble and ble.action == "block" then
       packet.deref(p)
       return
    end
@@ -163,7 +171,7 @@ function DDoS:process_packet(i, o)
 
    if src.pps_tokens and src.pps_tokens < 0 or src.bps_tokens and src.bps_tokens < 0 then
       src.block_until = cur_now + self.block_period
-      self.blocklist[src_ip] = { action = "block", block_until = cur_now + self.block_period-5}
+      self.blacklist[afi][src_ip] = { action = "block", block_until = cur_now + self.block_period-5 }
       packet.deref(p)
    else
       link.transmit(o, p)
