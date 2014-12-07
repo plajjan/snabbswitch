@@ -72,10 +72,14 @@ packets will be from source addresses that are blocked and therefore there is a
 shortcut in the code for quickly blocking those source IPs.
 
 With a simple Source -> DDoS -> Sink pipeline and the majority (>99.9%) of
-traffic being blocked, the DDoS app can achieve around 10Mpps / core.
+traffic being blocked, the DDoS app can achieve around 10Mpps / core. This is
+measured on a laptop with an i5@2.5GHz.
 
 The parsing of packet headers is expensive and so for traffic that does not
-match the blacklist, performance is typically ~0.5Mpps / core.
+match the blacklist, performance is typically ~1Mpps / core.
+
+In real world, with a pipeline of 82599 NIC -> DDoS -> 82599 NIC, the observed
+throughput is roughly half of the above.
 
 
 ## TODO
