@@ -142,17 +142,17 @@ function DDoS:process_packet(i, o)
 
    -- figure out rates
    -- uses http://en.wikipedia.org/wiki/Token_bucket algorithm
-   if src.pps_tokens then
+   if rule.pps_rate then
       src.pps_tokens = math.max(0,math.min(
-            src.pps_tokens + src.pps_rate * (cur_now - src.last_time),
-            src.pps_capacity
+            src.pps_tokens + rule.pps_rate * (cur_now - src.last_time),
+            rule.pps_burst
          ))
       src.pps_tokens = src.pps_tokens - 1
    end
-   if src.bps_tokens then
+   if rule.bps_rate then
       src.bps_tokens = math.max(0,math.min(
-            src.bps_tokens + src.bps_rate * (cur_now - src.last_time),
-            src.bps_capacity
+            src.bps_tokens + rule.bps_rate * (cur_now - src.last_time),
+            rule.bps_burst
          ))
       src.bps_tokens = src.bps_tokens - p.length
    end
@@ -186,12 +186,8 @@ function DDoS:get_src(rule, src_ip)
    if self.rules[rule.name].srcs[src_ip] == nil then
       self.rules[rule.name].srcs[src_ip] = {
          last_time = tonumber(app.now()),
-         pps_rate = rule.pps_rate,
          pps_tokens = rule.pps_burst,
-         pps_capacity = rule.pps_burst,
-         bps_rate = rule.bps_rate,
          bps_tokens = rule.bps_burst,
-         bps_capacity = rule.bps_burst,
          block_until = nil
       }
    end
