@@ -42,11 +42,11 @@ function DDoS:new (arg)
       rule.cfilter = filter
 
       -- use default burst value of 2*rate
-      if rule.pps_burst == nil then
+      if rule.pps_burst == nil and rule.pps_rate then
          rule.pps_burst = 2 * rule.pps_rate
       end
-      if rule.bps_burst == nil then
-         rule.pps_burst = 2 * rule.pps_rate
+      if rule.bps_burst == nil and rule.bps_rate then
+         rule.bps_burst = 2 * rule.bps_rate
       end
    end
 
@@ -156,19 +156,19 @@ function DDoS:process_packet(i, o)
    -- uses http://en.wikipedia.org/wiki/Token_bucket algorithm
    -- figure out pps rate
    if rule.pps_rate then
-      src.pps_tokens = math.max(0,math.min(
-            src.pps_tokens + rule.pps_rate * (cur_now - src.last_time),
-            rule.pps_burst
-         ))
-      src.pps_tokens = src.pps_tokens - 1
+      src.pps_tokens = math.max(0,
+            math.min(
+               src.pps_tokens + rule.pps_rate * (cur_now - src.last_time),
+               rule.pps_burst)
+         ) - 1
    end
    -- figure out bps rate
    if rule.bps_rate then
-      src.bps_tokens = math.max(0,math.min(
-            src.bps_tokens + rule.bps_rate * (cur_now - src.last_time),
-            rule.bps_burst
-         ))
-      src.bps_tokens = src.bps_tokens - p.length
+      src.bps_tokens = math.max(0,
+            math.min(
+               src.bps_tokens + rule.bps_rate * (cur_now - src.last_time),
+               rule.bps_burst)
+         ) - p.length
    end
 
    -- if pps/bps rate exceeds threshold, block!
@@ -214,12 +214,12 @@ end
 
 
 function DDoS:report()
-   print("-- DDoS report --")
+   print("\n-- DDoS report --")
+   print("Configured block period: " .. self.block_period .. " seconds")
    local s_i = link.stats(self.input.input)
    local s_o = link.stats(self.output.output)
    print("Rx: " .. s_i.rxpackets .. " packets / " .. s_i.rxbytes .. " bytes")
    print("Tx: " .. s_o.txpackets .. " packets / " .. s_o.txbytes .. " bytes / " .. s_o.txdrop .. " packet drops")
-   print("Configured block period: " .. self.block_period .. " seconds")
    print("Blacklist:")
    for src_ip,ble in pairs(self.blacklist.ipv4) do
       print("  " .. src_ip .. " blocked for another " .. string.format("%0.1f", tostring(ble.block_until - tonumber(app.now()))) .. " seconds")
@@ -328,8 +328,7 @@ function test_performance()
 
    local rules = {
       ntp = {
-         filter = "udp and src port 123",
-         pps_rate = 10
+         filter = "udp and src port 123"
       }
    }
 
@@ -354,7 +353,7 @@ function test_performance()
       'repeating'
    ))
 
-   local seconds_to_run = 5
+   local seconds_to_run = 30
    print("== Perf test - dropping NTP by match!")
    app.main({duration = seconds_to_run})
 
