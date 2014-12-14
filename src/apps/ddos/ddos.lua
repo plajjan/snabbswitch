@@ -34,6 +34,7 @@ function DDoS:new (arg)
 
    -- pre-process rules
    for rule_name, rule in pairs(self.rules) do
+      rule.name = rule_name
       rule.srcs = {}
       -- compile the filter
       local filter, errmsg = filter:new(rule.filter)
@@ -129,15 +130,15 @@ function DDoS:process_packet(i, o)
    d = self.d:reuse(p, ethernet)
 
    -- match up against our filter rules
-   local rule_match = self:bpf_match(d)
+   local rule = self:bpf_match(d)
    -- didn't match any rule, so permit it
-   if rule_match == nil then
+   if rule == nil then
       link.transmit(o, p)
       return
    end
 
    local cur_now = tonumber(app.now())
-   src = self:get_src(rule_match, src_ip)
+   src = self:get_src(rule, src_ip)
 
    -- figure out rates
    -- uses http://en.wikipedia.org/wiki/Token_bucket algorithm
@@ -172,29 +173,29 @@ end
 function DDoS:bpf_match(d)
    for rule_name, rule in pairs(self.rules) do
       if rule.cfilter:match(d:payload()) then
-         return rule_name
+         return rule
       end
    end
    return nil
 end
 
 
-function DDoS:get_src(rule_match, src_ip)
+function DDoS:get_src(rule, src_ip)
    -- get our data struct on that source IP
    -- TODO: we need to periodically clean this data struct up so it doesn't just fill up and consume all memory
-   if self.rules[rule_match].srcs[src_ip] == nil then
-      self.rules[rule_match].srcs[src_ip] = {
+   if self.rules[rule.name].srcs[src_ip] == nil then
+      self.rules[rule.name].srcs[src_ip] = {
          last_time = tonumber(app.now()),
-         pps_rate = self.rules[rule_match].pps_rate,
-         pps_tokens = self.rules[rule_match].pps_burst,
-         pps_capacity = self.rules[rule_match].pps_burst,
-         bps_rate = self.rules[rule_match].bps_rate,
-         bps_tokens = self.rules[rule_match].bps_burst,
-         bps_capacity = self.rules[rule_match].bps_burst,
+         pps_rate = rule.pps_rate,
+         pps_tokens = rule.pps_burst,
+         pps_capacity = rule.pps_burst,
+         bps_rate = rule.bps_rate,
+         bps_tokens = rule.bps_burst,
+         bps_capacity = rule.bps_burst,
          block_until = nil
       }
    end
-   return self.rules[rule_match].srcs[src_ip]
+   return self.rules[rule.name].srcs[src_ip]
 end
 
 
