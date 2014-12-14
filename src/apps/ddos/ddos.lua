@@ -110,17 +110,22 @@ function DDoS:process_packet(i, o)
    local iov = p.iovecs[0]
    local afi
 
-   -- dig out src IP from packet
-   -- TODO: don't use ntop to convert IP to a string and base hash lookup on a
-   -- string - use a radix trie or similar instead!
+   -- get ethertype of packet
    local ethertype = ffi.cast("uint16_t*", iov.buffer.pointer + iov.offset + 12)[0]
+
+   -- TODO: don't use ntop to convert IP to a string and base hash lookup on a
+   -- string - use a Patricia trie or similar instead!
+
+   -- dig out src IP from packet
    local src_ip
    if ethertype == self.ethertype_ipv4 then
       afi = "ipv4"
+      -- IPv4 source address is 26 bytes in
       src_ip = ffi.cast("uint32_t*", iov.buffer.pointer + iov.offset + 26)[0]
    elseif ethertype == self.ethertype_ipv6 then
       afi = "ipv6"
       -- TODO: this is slow, do something similar to IPv4
+      -- IPv6 source address is 22 bytes in
       src_ip = ipv6:ntop(iov.buffer.pointer + iov.offset + 22)
    else
       packet.deref(p)
@@ -167,7 +172,7 @@ function DDoS:process_packet(i, o)
    end
 
    -- if pps/bps rate exceeds threshold, block!
-   if src.pps_tokens and src.pps_tokens < 0 or src.bps_tokens and src.bps_tokens < 0 then
+   if rule.pps_rate and src.pps_tokens < 0 or rule.bps_rate and src.bps_tokens < 0 then
       src.block_until = cur_now + self.block_period
       self.blacklist[afi][src_ip] = { action = "block", block_until = cur_now + self.block_period-5 }
    end
@@ -349,7 +354,7 @@ function test_performance()
       'repeating'
    ))
 
-   local seconds_to_run = 30
+   local seconds_to_run = 5
    print("== Perf test - dropping NTP by match!")
    app.main({duration = seconds_to_run})
 
