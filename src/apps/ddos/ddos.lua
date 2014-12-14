@@ -40,6 +40,14 @@ function DDoS:new (arg)
       local filter, errmsg = filter:new(rule.filter)
       assert(filter, errmsg and ffi.string(errmsg))
       rule.cfilter = filter
+
+      -- use default burst value of 2*rate
+      if rule.pps_burst == nil then
+         rule.pps_burst = 2 * rule.pps_rate
+      end
+      if rule.bps_burst == nil then
+         rule.pps_burst = 2 * rule.pps_rate
+      end
    end
 
    -- datagram object for reuse
@@ -140,8 +148,8 @@ function DDoS:process_packet(i, o)
    local cur_now = tonumber(app.now())
    src = self:get_src(rule, src_ip)
 
-   -- figure out rates
    -- uses http://en.wikipedia.org/wiki/Token_bucket algorithm
+   -- figure out pps rate
    if rule.pps_rate then
       src.pps_tokens = math.max(0,math.min(
             src.pps_tokens + rule.pps_rate * (cur_now - src.last_time),
@@ -149,6 +157,7 @@ function DDoS:process_packet(i, o)
          ))
       src.pps_tokens = src.pps_tokens - 1
    end
+   -- figure out bps rate
    if rule.bps_rate then
       src.bps_tokens = math.max(0,math.min(
             src.bps_tokens + rule.bps_rate * (cur_now - src.last_time),
@@ -157,9 +166,13 @@ function DDoS:process_packet(i, o)
       src.bps_tokens = src.bps_tokens - p.length
    end
 
+   -- if pps/bps rate exceeds threshold, block!
    if src.pps_tokens and src.pps_tokens < 0 or src.bps_tokens and src.bps_tokens < 0 then
       src.block_until = cur_now + self.block_period
       self.blacklist[afi][src_ip] = { action = "block", block_until = cur_now + self.block_period-5 }
+   end
+
+   if src.block_until and src.block_until < cur_now then
       packet.deref(p)
    else
       link.transmit(o, p)
@@ -311,10 +324,7 @@ function test_performance()
    local rules = {
       ntp = {
          filter = "udp and src port 123",
-         pps_rate = 10,
-         pps_burst = 20,
-         bps_rate = nil,
-         bps_burst = nil
+         pps_rate = 10
       }
    }
 
