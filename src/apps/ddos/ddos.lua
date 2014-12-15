@@ -27,7 +27,8 @@ function DDoS:new (arg)
          ipv6 = {}
       },
       rules = conf.rules,
-      block_period = conf.block_period
+      block_period = conf.block_period,
+      max_block_period = conf.max_block_period or 600
    }
 
    self = setmetatable(o, {__index = DDoS})
@@ -49,6 +50,8 @@ function DDoS:new (arg)
          rule.bps_burst = 2 * rule.bps_rate
       end
    end
+
+   self.test = ffi.cast("uint32_t", 2538242650)
 
    -- datagram object for reuse
    self.d = datagram:new()
@@ -132,8 +135,17 @@ function DDoS:process_packet(i, o)
       return
    end
 
+   if src_ip == self.test then
+      packet.deref(p)
+      return
+   end
+
    -- short cut for stuff in blacklist that is in state block
    -- TODO: blacklist is a table. use a Radix trie instead!
+   -- Doing a simple match against a static IP cast as a uint32_t increases
+   -- performance to 23Mpps on my laptop from 9Mpps when matching in this table.
+   -- Using a Patricia tree, I hope we can end up somewhere in between..
+   -- 14.8Mpps would be perfect ;)
    local ble = self.blacklist[afi][src_ip]
    if ble and ble.action == "block" then
       packet.deref(p)
@@ -328,7 +340,8 @@ function test_performance()
 
    local rules = {
       ntp = {
-         filter = "udp and src port 123"
+         filter = "udp and src port 123",
+         pps_rate = 10
       }
    }
 
@@ -353,7 +366,7 @@ function test_performance()
       'repeating'
    ))
 
-   local seconds_to_run = 30
+   local seconds_to_run = 5
    print("== Perf test - dropping NTP by match!")
    app.main({duration = seconds_to_run})
 
