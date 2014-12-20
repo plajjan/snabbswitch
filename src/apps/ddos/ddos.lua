@@ -19,7 +19,6 @@ DDoS = {}
 -- I don't know what I'm doing
 function DDoS:new (arg)
    local conf = arg and config.parse_app_arg(arg) or {}
-   assert(conf.block_period >= 5, "block_period must be at least 5 seconds")
    local o =
    {
       blacklist = {
@@ -27,11 +26,13 @@ function DDoS:new (arg)
          ipv6 = {}
       },
       rules = conf.rules,
-      block_period = conf.block_period,
-      max_block_period = conf.max_block_period or 600
+      initial_block_time = conf.initial_block_time or 10,
+      max_block_time = conf.max_block_time or 600
    }
 
    self = setmetatable(o, {__index = DDoS})
+   assert(self.initial_block_time >= 5, "initial_block_time must be at least 5 seconds")
+   assert(self.max_block_time >= 5, "max_block_time must be at least 5 seconds")
 
    -- pre-process rules
    for rule_name, rule in pairs(self.rules) do
@@ -135,10 +136,10 @@ function DDoS:process_packet(i, o)
       return
    end
 
-   if src_ip == self.test then
-      packet.deref(p)
-      return
-   end
+--   if src_ip == self.test then
+--      packet.deref(p)
+--      return
+--   end
 
    -- short cut for stuff in blacklist that is in state block
    -- TODO: blacklist is a table. use a Radix trie instead!
@@ -185,8 +186,10 @@ function DDoS:process_packet(i, o)
 
    -- if pps/bps rate exceeds threshold, block!
    if rule.pps_rate and src.pps_tokens < 0 or rule.bps_rate and src.bps_tokens < 0 then
-      src.block_until = cur_now + self.block_period
-      self.blacklist[afi][src_ip] = { action = "block", block_until = cur_now + self.block_period-5 }
+      local block_time = math.min(src.last_block_time * 2, self.max_block_time)
+      src.block_until = cur_now + block_time
+      src.last_block_time = block_time
+      self.blacklist[afi][src_ip] = { action = "block", block_until = src.block_until - 5 }
    end
 
    if src.block_until and src.block_until < cur_now then
@@ -218,7 +221,8 @@ function DDoS:get_src(rule, src_ip)
          last_time = tonumber(app.now()),
          pps_tokens = rule.pps_burst,
          bps_tokens = rule.bps_burst,
-         block_until = nil
+         block_until = nil,
+         last_block_time = self.initial_block_time / 2
       }
    end
    return self.rules[rule.name].srcs[src_ip]
@@ -227,7 +231,8 @@ end
 
 function DDoS:report()
    print("\n-- DDoS report --")
-   print("Configured block period: " .. self.block_period .. " seconds")
+   print("Configured initial block period: " .. self.initial_block_time .. " seconds")
+   print("Configured maximum block period: " .. self.max_block_time .. " seconds")
    local s_i = link.stats(self.input.input)
    local s_o = link.stats(self.output.output)
    print("Rx: " .. s_i.rxpackets .. " packets / " .. s_i.rxbytes .. " bytes")
@@ -300,7 +305,7 @@ function test_logic()
 
    local c = config.new()
    config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
-   config.app(c, "ddos", DDoS, { rules = rules, block_period = 60 })
+   config.app(c, "ddos", DDoS, { rules = rules })
    config.app(c, "sink", pcap.PcapWriter, "apps/ddos/selftest.cap.output")
    config.link(c, "source.output -> ddos.input")
    config.link(c, "ddos.output -> sink.input")
@@ -348,7 +353,7 @@ function test_performance()
    local c = config.new()
    config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
    config.app(c, "repeater", basic_apps.FastRepeater)
-   config.app(c, "ddos", DDoS, { rules = rules, block_period = 10 })
+   config.app(c, "ddos", DDoS, { rules = rules })
    config.app(c, "sink", basic_apps.FastSink)
    config.link(c, "source.output -> repeater.input")
    config.link(c, "repeater.output -> ddos.input")
@@ -366,7 +371,7 @@ function test_performance()
       'repeating'
    ))
 
-   local seconds_to_run = 5
+   local seconds_to_run = 30
    print("== Perf test - dropping NTP by match!")
    app.main({duration = seconds_to_run})
 
