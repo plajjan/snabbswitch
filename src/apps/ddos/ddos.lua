@@ -25,6 +25,7 @@ function DDoS:new (arg)
          ipv4 = {},
          ipv6 = {}
       },
+      sources = {},
       rules = conf.rules,
       initial_block_time = conf.initial_block_time or 10,
       max_block_time = conf.max_block_time or 600
@@ -37,7 +38,6 @@ function DDoS:new (arg)
    -- pre-process rules
    for rule_name, rule in pairs(self.rules) do
       rule.name = rule_name
-      rule.srcs = {}
       -- compile the filter
       local filter, errmsg = filter:new(rule.filter)
       assert(filter, errmsg and ffi.string(errmsg))
@@ -85,14 +85,8 @@ function DDoS:periodic()
       end
    end
 
-   -- and in rules
-   for rule_name,rule in pairs(self.rules) do
-      for src_ip,src_info in pairs(rule.srcs) do
-         if src_info.block_until ~= nil and src_info.block_until < tonumber(app.now()) then
-            src_info.block_until = nil
-         end
-      end
-   end
+   -- TODO do stuff with sources struct
+
 end
 
 
@@ -164,7 +158,7 @@ function DDoS:process_packet(i, o)
    end
 
    local cur_now = tonumber(app.now())
-   src = self:get_src(rule, src_ip)
+   src = self:get_src(src_ip, rule)
 
    -- uses http://en.wikipedia.org/wiki/Token_bucket algorithm
    -- figure out pps rate
@@ -213,11 +207,19 @@ function DDoS:bpf_match(d)
 end
 
 
-function DDoS:get_src(rule, src_ip)
+-- return data struct on source ip for specific rule
+function DDoS:get_src(src_ip, rule)
    -- get our data struct on that source IP
    -- TODO: we need to periodically clean this data struct up so it doesn't just fill up and consume all memory
-   if self.rules[rule.name].srcs[src_ip] == nil then
-      self.rules[rule.name].srcs[src_ip] = {
+
+   if self.sources[src_ip] == nil then
+      self.sources[src_ip] = {
+         rule = {}
+         }
+   end
+
+   if self.sources[src_ip].rule[rule.name] == nil then
+      self.sources[src_ip].rule[rule.name] = {
          last_time = tonumber(app.now()),
          pps_tokens = rule.pps_burst,
          bps_tokens = rule.bps_burst,
@@ -225,7 +227,7 @@ function DDoS:get_src(rule, src_ip)
          last_block_time = self.initial_block_time / 2
       }
    end
-   return self.rules[rule.name].srcs[src_ip]
+   return self.sources[src_ip].rule[rule.name]
 end
 
 
@@ -245,22 +247,22 @@ function DDoS:report()
    print("Traffic rules:")
    for rule_name,rule in pairs(self.rules) do
       print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule_name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
-      for src_ip,src_info in pairs(rule.srcs) do
-         -- calculate rate of packets
-         -- TODO: calculate real PPS rate
-         pps_tokens = string.format("%5s", "-")
-         -- if source is in blocklist it means we shortcut and thus don't
-         -- calculate pps, so we write '-'
---         if self.blocklist[src_ip] == nil and src_info.pps_tokens then
---            pps_tokens = string.format("%5.0f", src_info.pps_tokens )
---         end
-         str = string.format("  %15s last: %d tokens: %s ", src_ip, tonumber(app.now())-src_info.last_time, pps_tokens)
-         if src_info.block_until == nil then
-            str = string.format("%s %-7s", str, "allowed")
-         else
-            str = string.format("%s %-7s", str, "blocked for another " .. string.format("%0.1f", tostring(src_info.block_until - tonumber(app.now()))) .. " seconds")
+      for src_ip,src_info in pairs(self.sources) do
+         if src_info.rule[rule_name] ~= nil then
+            local sr_info = src_info.rule[rule_name]
+
+            -- calculate rate of packets
+            -- TODO: calculate real PPS rate
+            pps_tokens = string.format("%5s", "-")
+
+            str = string.format("  %15s last: %d tokens: %s ", src_ip, tonumber(app.now())-sr_info.last_time, pps_tokens)
+            if sr_info.block_until == nil then
+               str = string.format("%s %-7s", str, "allowed")
+            else
+               str = string.format("%s %-7s", str, "blocked for another " .. string.format("%0.1f", tostring(sr_info.block_until - tonumber(app.now()))) .. " seconds")
+            end
+            print(str)
          end
-         print(str)
       end
    end
 end
