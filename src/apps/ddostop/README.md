@@ -1,8 +1,8 @@
-# DDoS source block App
+# DDoStop source block App
 
-## `DDoS` app: block sources exceeding pps/bps thresholds
+## `DDoStop` app: a basic DDoS mitigation application
 
-The `DDoS` app implements functionality to block source hosts that exceed
+The `DDoStop` app implements functionality to block source hosts that exceed
 certain thresholds.
 
 Arbor, a leading DDoS mitigation system vendor, calls this functionality
@@ -21,7 +21,7 @@ from the host is allowed, it is not only NTP that is blocked.
 
 ### Operation
 
-The DDoS app begins by determining if the packet is an IPv4 or IPv6 packet by
+The DDoStop app begins by determining if the packet is an IPv4 or IPv6 packet by
 inspecting the ethertype field of the Ethernet header. Next the source address
 is fetched and compared with a blacklist and if it's a match is is dropped.
 
@@ -63,24 +63,24 @@ rules that are matched less often. Performance will decrease with more rules!
 
 ### Usage
 
-Use the following pattern to create and initialize DDoS instance;
+Use the following pattern to create and initialize DDoStop instance;
 
 
 ### Performance
 
-The performancce of the `DDoS` app varies greatly based on the type of packet
+The performancce of the `DDoStop` app varies greatly based on the type of packet
 and what action is chosen for that packet. It is assumed that the majority of
 packets will be from source addresses that are blocked and therefore there is a
 shortcut in the code for quickly blocking those source IPs.
 
-With a simple Source -> DDoS -> Sink pipeline and the majority (>99.9%) of
-traffic being blocked, the DDoS app can achieve around 10Mpps / core. This is
+With a simple Source -> DDoStop -> Sink pipeline and the majority (>99.9%) of
+traffic being blocked, the DDoStop app can achieve around 10Mpps / core. This is
 measured on a laptop with an i5@2.5GHz.
 
 The parsing of packet headers is expensive and so for traffic that does not
 match the blacklist, performance is typically ~1Mpps / core.
 
-In real world, with a pipeline of 82599 NIC -> DDoS -> 82599 NIC, the observed
+In real world, with a pipeline of 82599 NIC -> DDoStop -> 82599 NIC, the observed
 throughput is roughly half of the above.
 
 
