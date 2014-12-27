@@ -29,7 +29,7 @@ If the source doesn't match the blacklist processing continues. The packet will
 be matched against the ruleset and if a match is found the packet per second
 and bits per second rates will be calculated. As soon as a source host exceeds
 a given threshold it will be put in the blacklist. The time a source host is
-blacklisted is initially five seconds after which it will double for every time
+blacklisted is initially 10 seconds after which it will double for every time
 the source is found to be a repeat offender until it hits the max_block_time
 which is 600 per default.
 
