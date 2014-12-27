@@ -43,5 +43,9 @@ end
 -- Expects an IPv4 address as an integer (Lua number)
 --
 function patricia:lookup_i(prefix)
-   return C.search_best(self.trie, prefix)
+   return C.search_best2(self.trie, prefix)
+end
+
+function patricia:new_prefix(prefix)
+   return C.create_prefix(2, prefix, 32)
 end

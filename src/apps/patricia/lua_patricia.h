@@ -65,10 +65,12 @@ prefix_t * ascii2prefix (int family, char *string);
 
 patricia_node_t * make_and_lookup (patricia_tree_t *tree, char *string);
 
-prefix_t * New_Prefix2 (int family, void *dest, int bitlen, prefix_t *prefix);
+prefix_t * create_prefix (int family, unsigned int dest, int bitlen);
 
 patricia_node_t * patricia_search_best (patricia_tree_t *patricia, prefix_t *prefix);
 
 patricia_node_t * try_search_best (patricia_tree_t *tree, char *string);
 
 patricia_node_t * search_best (patricia_tree_t *tree, unsigned int string);
+
+patricia_node_t * search_best2 (patricia_tree_t *tree, prefix_t *prefix);

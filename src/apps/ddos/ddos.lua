@@ -41,6 +41,8 @@ function DDoS:new (arg)
    self.bl = patricia:new()
    self.bl:add_prefix("90.130.74.151")
 
+   self.tjong = self.bl:new_prefix(2538242650)
+
    -- pre-process rules
    for rule_name, rule in pairs(self.rules) do
       rule.name = rule_name
@@ -128,11 +130,12 @@ function DDoS:process_packet(i, o)
       src_ip = ffi.cast("uint32_t*", iov.buffer.pointer + iov.offset + 26)[0]
 
       -- do shortcut lookup in fast bl trie
-      local match = self.bl:lookup_i(src_ip)
-      if match ~= nil then
-         packet.deref(p)
-         return
-      end
+      local match = self.bl:lookup_i(self.tjong)
+--      local match = self.bl:lookup_i(src_ip)
+--      if match ~= nil then
+--         packet.deref(p)
+--         return
+--      end
    elseif ethertype == self.ethertype_ipv6 then
       afi = "ipv6"
       -- TODO: this is slow, do something similar to IPv4

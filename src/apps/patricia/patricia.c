@@ -232,6 +232,12 @@ New_Prefix (int family, void *dest, int bitlen)
     return (New_Prefix2 (family, dest, bitlen, NULL));
 }
 
+prefix_t *
+create_prefix (int family, unsigned int dest, int bitlen)
+{
+    return (New_Prefix(family, &dest, bitlen));
+}
+
 /* ascii2prefix
  */
 prefix_t *
@@ -1011,6 +1017,15 @@ search_best (patricia_tree_t *tree, unsigned int input)
     prefix = New_Prefix(AF_INET, &input, 32);
     node = patricia_search_best (tree, prefix);
     Deref_Prefix (prefix);
+    return (node);
+}
+
+patricia_node_t *
+search_best2 (patricia_tree_t *tree, prefix_t* prefix)
+{
+    patricia_node_t *node;
+
+    node = patricia_search_best (tree, prefix);
     return (node);
 }
 
