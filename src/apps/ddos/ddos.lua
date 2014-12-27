@@ -52,8 +52,6 @@ function DDoS:new (arg)
       end
    end
 
-   self.test = ffi.cast("uint32_t", 2538242650)
-
    -- datagram object for reuse
    self.d = datagram:new()
 
@@ -129,11 +127,6 @@ function DDoS:process_packet(i, o)
       packet.deref(p)
       return
    end
-
---   if src_ip == self.test then
---      packet.deref(p)
---      return
---   end
 
    -- short cut for stuff in blacklist that is in state block
    -- TODO: blacklist is a table. use a Radix trie instead!
