@@ -12,6 +12,8 @@ local lib = require("core.lib")
 local link = require("core.link")
 local packet = require("core.packet")
 
+local patricia = require("apps.patricia.patricia").patricia
+
 local C = ffi.C
 
 DDoS = {}
@@ -34,6 +36,10 @@ function DDoS:new (arg)
    self = setmetatable(o, {__index = DDoS})
    assert(self.initial_block_time >= 5, "initial_block_time must be at least 5 seconds")
    assert(self.max_block_time >= 5, "max_block_time must be at least 5 seconds")
+
+   -- fast blacklist using patricia trie
+   self.bl = patricia:new()
+   self.bl:add_prefix("90.130.74.151")
 
    -- pre-process rules
    for rule_name, rule in pairs(self.rules) do
@@ -120,6 +126,13 @@ function DDoS:process_packet(i, o)
       afi = "ipv4"
       -- IPv4 source address is 26 bytes in
       src_ip = ffi.cast("uint32_t*", iov.buffer.pointer + iov.offset + 26)[0]
+
+      -- do shortcut lookup in fast bl trie
+      local match = self.bl:lookup_i(src_ip)
+      if match ~= nil then
+         packet.deref(p)
+         return
+      end
    elseif ethertype == self.ethertype_ipv6 then
       afi = "ipv6"
       -- TODO: this is slow, do something similar to IPv4
@@ -129,11 +142,6 @@ function DDoS:process_packet(i, o)
       packet.deref(p)
       return
    end
-
---   if src_ip == self.test then
---      packet.deref(p)
---      return
---   end
 
    -- short cut for stuff in blacklist that is in state block
    -- TODO: blacklist is a table. use a Radix trie instead!
@@ -373,7 +381,7 @@ function test_performance()
       'repeating'
    ))
 
-   local seconds_to_run = 30
+   local seconds_to_run = 10
    print("== Perf test - dropping NTP by match!")
    app.main({duration = seconds_to_run})
 
