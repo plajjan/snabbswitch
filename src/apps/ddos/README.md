@@ -27,9 +27,11 @@ is fetched and compared with a blacklist and if it's a match is is dropped.
 
 If the source doesn't match the blacklist processing continues. The packet will
 be matched against the ruleset and if a match is found the packet per second
-and bits per second rates will be calculated. As soon as a source exceeds a
-given threshold it will be put in the blacklist. The time a source is
-blacklisted is configurable.
+and bits per second rates will be calculated. As soon as a source host exceeds
+a given threshold it will be put in the blacklist. The time a source host is
+blacklisted is initially five seconds after which it will double for every time
+the source is found to be a repeat offender until it hits the max_block_time
+which is 600 per default.
 
 If the packet does not match any rules it will be forwarded and no state of
 that source is held.
@@ -61,7 +63,7 @@ rules that are matched less often. Performance will decrease with more rules!
 
 ### Usage
 
-Use the following pattern to create and initialize DDoS instance
+Use the following pattern to create and initialize DDoS instance;
 
 
 ### Performance
@@ -84,11 +86,7 @@ throughput is roughly half of the above.
 
 ## TODO
  * Do mitigation per destination IP, including different rule set per dest IP
- * Do not handle source IP address as text string. It's bits!
  * Use patricia trie instead of table for doing source IP lookups
  * Support IPv6
- * Support back-off timer in block period. E.g. start with 30 seconds, then do
-   60, 120, 240 until reaches max block period
  * Calculate real pps / bps rate per source for filter matches
- * Performance: reuse datagram stuff?
  * Add lots more tests
