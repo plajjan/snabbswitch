@@ -1,7 +1,6 @@
 module(..., package.seeall)
 
 local app = require("core.app")
-local buffer = require("core.buffer")
 local datagram = require("lib.protocol.datagram")
 local ethernet = require("lib.protocol.ethernet")
 local ffi = require("ffi")
@@ -103,11 +102,10 @@ end
 
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
-   local iov = p.iovecs[0]
    local afi
 
    -- get ethertype of packet
-   local ethertype = ffi.cast("uint16_t*", iov.buffer.pointer + iov.offset + 12)[0]
+   local ethertype = ffi.cast("uint16_t*", packet.data(p) + 12)[0]
 
    -- TODO: don't use ntop to convert IP to a string and base hash lookup on a
    -- string - use a Patricia trie or similar instead!
@@ -117,14 +115,14 @@ function DDoS:process_packet(i, o)
    if ethertype == self.ethertype_ipv4 then
       afi = "ipv4"
       -- IPv4 source address is 26 bytes in
-      src_ip = ffi.cast("uint32_t*", iov.buffer.pointer + iov.offset + 26)[0]
+      src_ip = ffi.cast("uint32_t*", packet.data(p) + 26)[0]
    elseif ethertype == self.ethertype_ipv6 then
       afi = "ipv6"
       -- TODO: this is slow, do something similar to IPv4
       -- IPv6 source address is 22 bytes in
-      src_ip = ipv6:ntop(iov.buffer.pointer + iov.offset + 22)
+      src_ip = ipv6:ntop(packet.data(p) + 22)
    else
-      packet.deref(p)
+      packet.free(p)
       return
    end
 
@@ -136,7 +134,7 @@ function DDoS:process_packet(i, o)
    -- 14.8Mpps would be perfect ;)
    local ble = self.blacklist[afi][src_ip]
    if ble and ble.action == "block" then
-      packet.deref(p)
+      packet.free(p)
       return
    end
 
@@ -180,7 +178,7 @@ function DDoS:process_packet(i, o)
    end
 
    if src.block_until and src.block_until < cur_now then
-      packet.deref(p)
+      packet.free(p)
    else
       link.transmit(o, p)
    end
@@ -286,8 +284,6 @@ function test_logic()
    local pcap = require("apps.pcap.pcap")
    local basic_apps = require("apps.basic.basic_apps")
 
-   buffer.preallocate(10000)
-
    local rules = {
       ntp = {
          filter = "udp and src port 123",
@@ -299,9 +295,9 @@ function test_logic()
    }
 
    local c = config.new()
-   config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
+   config.app(c, "source", pcap.PcapReader, "apps/ddostop/selftest.cap.input")
    config.app(c, "ddos", DDoS, { rules = rules })
-   config.app(c, "sink", pcap.PcapWriter, "apps/ddos/selftest.cap.output")
+   config.app(c, "sink", pcap.PcapWriter, "apps/ddostop/selftest.cap.output")
    config.link(c, "source.output -> ddos.input")
    config.link(c, "ddos.output -> sink.input")
    app.configure(c)
@@ -316,12 +312,12 @@ function test_logic()
    print("  we should see a total of 25 packets = 5 ICMP (allowed) + 20 NTP (burst)")
    app.main({duration = 5}) -- should be long enough...
    -- Check results
-   if io.open("apps/ddos/selftest.cap.output"):read('*a') ~=
-      io.open("apps/ddos/selftest.cap.expect-1"):read('*a') then
+   if io.open("apps/ddostop/selftest.cap.output"):read('*a') ~=
+      io.open("apps/ddostop/selftest.cap.expect-1"):read('*a') then
       print([[file selftest.cap.output does not match selftest.cap.expect.
       Check for the mismatch like this (example):
-      tshark -Vnr apps/ddos/selftest.cap.output > /tmp/selftest.cap.output.txt
-      tshark -Vnr apps/ddos/selftest.cap.expect-1 > /tmp/selftest.cap.expect-1.txt
+      tshark -Vnr apps/ddostop/selftest.cap.output > /tmp/selftest.cap.output.txt
+      tshark -Vnr apps/ddostop/selftest.cap.expect-1 > /tmp/selftest.cap.expect-1.txt
       diff -u /tmp/selftest.cap.{output,expect-1}.txt | less ]])
       ok = false
    else
@@ -336,8 +332,6 @@ function test_performance()
    local pcap = require("apps.pcap.pcap")
    local basic_apps = require("apps.basic.basic_apps")
 
-   buffer.preallocate(10000)
-
    local rules = {
       ntp = {
          filter = "udp and src port 123",
@@ -346,10 +340,10 @@ function test_performance()
    }
 
    local c = config.new()
-   config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
-   config.app(c, "repeater", basic_apps.FastRepeater)
+   config.app(c, "source", pcap.PcapReader, "apps/ddostop/selftest.cap.input")
+   config.app(c, "repeater", basic_apps.Repeater)
    config.app(c, "ddos", DDoS, { rules = rules })
-   config.app(c, "sink", basic_apps.FastSink)
+   config.app(c, "sink", basic_apps.Sink)
    config.link(c, "source.output -> repeater.input")
    config.link(c, "repeater.output -> ddos.input")
    config.link(c, "ddos.output -> sink.input")
@@ -366,7 +360,7 @@ function test_performance()
       'repeating'
    ))
 
-   local seconds_to_run = 30
+   local seconds_to_run = 10
    print("== Perf test - dropping NTP by match!")
    app.main({duration = seconds_to_run})
 
