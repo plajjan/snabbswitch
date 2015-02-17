@@ -263,9 +263,9 @@ function selftest()
    print("DDoS selftest")
 
    local ok = true
---   if not test_logic() then
---      ok = false
---   end
+   if not test_logic() then
+      ok = false
+   end
 
    if not test_performance() then
       ok = false
@@ -310,7 +310,8 @@ function test_logic()
    print("== Logic test - matching NTP")
    print("  Rule for NTP packets with threshold of 10pps/20p burst, rest is allowed")
    print("  we should see a total of 25 packets = 5 ICMP (allowed) + 20 NTP (burst)")
-   app.main({duration = 5}) -- should be long enough...
+--   app.main({duration = 5}) -- should be long enough...
+   app.breathe()
    -- Check results
    if io.open("apps/ddostop/selftest.cap.output"):read('*a') ~=
       io.open("apps/ddostop/selftest.cap.expect-1"):read('*a') then
@@ -362,11 +363,16 @@ function test_performance()
 
    local seconds_to_run = 10
    print("== Perf test - dropping NTP by match!")
-   app.main({duration = seconds_to_run})
+--   app.main({duration = seconds_to_run})
+   for i = 1, 900000 do
+      app.breathe()
+      timer.run()
+   end
 
    print("source sent: " .. app.app_table.source.output.output.stats.txpackets)
    print("repeater sent: " .. app.app_table.repeater.output.output.stats.txpackets)
    print("sink received: " .. app.app_table.sink.input.input.stats.rxpackets)
+   -- TODO: fix effective rate, seconds_to_run isn't correct anymore
    print("Effective rate: " .. string.format("%0.1f", tostring(app.app_table.repeater.output.output.stats.txpackets / seconds_to_run)))
    return true
 end
