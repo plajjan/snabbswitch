@@ -99,6 +99,14 @@ function DDoS:push ()
    end
 end
 
+function ntop(num)
+   oct1 = math.floor(num) % 2 ^ 8
+   oct2 = math.floor(num / 2 ^ 8) % 2 ^ 8
+   oct3 = math.floor(num / 2 ^ 16) % 2 ^ 8
+   oct4 = math.floor(num / 2 ^ 24) % 2 ^ 8
+   return oct1 .. "." .. oct2 .. "." .. oct3 .. "." .. oct4
+end
+
 
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
@@ -232,7 +240,7 @@ function DDoS:report()
    print("Tx: " .. s_o.txpackets .. " packets / " .. s_o.txbytes .. " bytes / " .. s_o.txdrop .. " packet drops")
    print("Blacklist:")
    for src_ip,ble in pairs(self.blacklist.ipv4) do
-      print("  " .. src_ip .. " blocked for another " .. string.format("%0.1f", tostring(ble.block_until - tonumber(app.now()))) .. " seconds")
+      print("  " .. ntop(src_ip) .. " blocked for another " .. string.format("%0.1f", tostring(ble.block_until - tonumber(app.now()))) .. " seconds")
    end
 
    print("Traffic rules:")
@@ -246,7 +254,7 @@ function DDoS:report()
             -- TODO: calculate real PPS rate
             pps_tokens = string.format("%5s", "-")
 
-            str = string.format("  %15s last: %d tokens: %s ", src_ip, tonumber(app.now())-sr_info.last_time, pps_tokens)
+            str = string.format("  %15s last: %d tokens: %s ", ntop(src_ip), tonumber(app.now())-sr_info.last_time, pps_tokens)
             if sr_info.block_until == nil then
                str = string.format("%s %-7s", str, "allowed")
             else
@@ -361,19 +369,24 @@ function test_performance()
       'repeating'
    ))
 
-   local seconds_to_run = 10
    print("== Perf test - dropping NTP by match!")
    engine.Hz = false
-   app.main({duration = seconds_to_run})
---   for i = 1, 900000 do
+   local start_time = tonumber(C.get_time_ns())
+   app.main({duration = 20})
+--   for i = 1, 500000 do
 --      app.breathe()
 --      timer.run()
 --   end
+--   local deadline = lib.timer(seconds_to_run * 1e9)
+--   repeat app.breathe() until deadline()
+   local stop_time = tonumber(C.get_time_ns())
+   local elapsed_time = (stop_time - start_time) / 1e9
+   print("elapsed time ", elapsed_time, "seconds")
 
    print("source sent: " .. app.app_table.source.output.output.stats.txpackets)
    print("repeater sent: " .. app.app_table.repeater.output.output.stats.txpackets)
    print("sink received: " .. app.app_table.sink.input.input.stats.rxpackets)
    -- TODO: fix effective rate, seconds_to_run isn't correct anymore
-   print("Effective rate: " .. string.format("%0.1f", tostring(app.app_table.repeater.output.output.stats.txpackets / seconds_to_run)))
+   print("Effective rate: " .. string.format("%0.1f", tostring(app.app_table.repeater.output.output.stats.txpackets / elapsed_time)))
    return true
 end
