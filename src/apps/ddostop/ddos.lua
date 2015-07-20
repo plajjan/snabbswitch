@@ -363,11 +363,12 @@ function test_performance()
 
    local seconds_to_run = 10
    print("== Perf test - dropping NTP by match!")
---   app.main({duration = seconds_to_run})
-   for i = 1, 900000 do
-      app.breathe()
-      timer.run()
-   end
+   engine.Hz = false
+   app.main({duration = seconds_to_run})
+--   for i = 1, 900000 do
+--      app.breathe()
+--      timer.run()
+--   end
 
    print("source sent: " .. app.app_table.source.output.output.stats.txpackets)
    print("repeater sent: " .. app.app_table.repeater.output.output.stats.txpackets)
