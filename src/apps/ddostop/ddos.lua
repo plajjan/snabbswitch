@@ -27,7 +27,8 @@ function DDoS:new (arg)
       sources = {},
       rules = conf.rules,
       initial_block_time = conf.initial_block_time or 10,
-      max_block_time = conf.max_block_time or 600
+      max_block_time = conf.max_block_time or 600,
+      last_report = nil
    }
 
    self = setmetatable(o, {__index = DDoS})
@@ -65,6 +66,7 @@ function DDoS:new (arg)
       1e9, -- every second
       'repeating'
    ))
+
    return self
 end 
 
@@ -230,14 +232,47 @@ function DDoS:get_src(src_ip, rule)
 end
 
 
+function DDoS:get_stats_snapshot()
+   return {
+      rxpackets = self.input.input.stats.txpackets,
+      rxbytes = self.input.input.stats.txbytes,
+      txpackets = self.output.output.stats.txpackets,
+      txbytes = self.output.output.stats.txbytes,
+      txdrop = self.output.output.stats.txdrop,
+      time = tonumber(C.get_time_ns()),
+   }
+end
+
+function num_prefix (num)
+   if num > 1e12 then
+      return string.format("%0.2fT", tostring(num / 1e12))
+   end
+   if num > 1e9 then
+      return string.format("%0.2fG", tostring(num / 1e9))
+   end
+   if num > 1e6 then
+      return string.format("%0.2fM", tostring(num / 1e6))
+   end
+   if num > 1e3 then
+      return string.format("%0.2fk", tostring(num / 1e3))
+   end
+   return string.format("%0.2f", tostring(num))
+end
+
+
 function DDoS:report()
+   if self.last_stats == nil then
+      self.last_stats = self:get_stats_snapshot()
+      return
+   end
+   last = self.last_stats
+   cur = self:get_stats_snapshot()
+
    print("\n-- DDoS report --")
    print("Configured initial block period: " .. self.initial_block_time .. " seconds")
    print("Configured maximum block period: " .. self.max_block_time .. " seconds")
-   local s_i = link.stats(self.input.input)
-   local s_o = link.stats(self.output.output)
-   print("Rx: " .. s_i.rxpackets .. " packets / " .. s_i.rxbytes .. " bytes")
-   print("Tx: " .. s_o.txpackets .. " packets / " .. s_o.txbytes .. " bytes / " .. s_o.txdrop .. " packet drops")
+   print("Rx: " .. num_prefix((cur.rxpackets - last.rxpackets) / ((cur.time - last.time) / 1e9)) .. "pps / " .. cur.rxpackets .. " packets / " .. cur.rxbytes .. " bytes")
+   print("Tx: " .. num_prefix((cur.txpackets - last.txpackets) / ((cur.time - last.time) / 1e9)) .. "pps / " .. cur.txpackets .. " packets / " .. cur.txbytes .. " bytes / " .. cur.txdrop .. " packet drops")
    print("Blacklist:")
    for src_ip,ble in pairs(self.blacklist.ipv4) do
       print("  " .. ntop(src_ip) .. " blocked for another " .. string.format("%0.1f", tostring(ble.block_until - tonumber(app.now()))) .. " seconds")
@@ -264,6 +299,8 @@ function DDoS:report()
          end
       end
    end
+
+   self.last_stats = cur
 end
 
 
@@ -370,7 +407,7 @@ function test_performance()
    ))
 
    print("== Perf test - dropping NTP by match!")
-   engine.Hz = false
+--   engine.Hz = false
    local start_time = tonumber(C.get_time_ns())
    app.main({duration = 20})
 --   for i = 1, 500000 do
