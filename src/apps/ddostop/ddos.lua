@@ -37,8 +37,7 @@ function DDoS:new (arg)
    assert(self.max_block_time >= 5, "max_block_time must be at least 5 seconds")
 
    -- pre-process rules
-   for rule_name, rule in pairs(self.rules) do
-      rule.name = rule_name
+   for rule_num, rule in pairs(self.rules) do
       -- compile the filter
       local filter = pf.compile_filter(rule.filter)
       assert(filter)
@@ -200,7 +199,7 @@ end
 
 -- match against our BPF rules and return name of the match
 function DDoS:bpf_match(d)
-   for rule_name, rule in ipairs(self.rules) do
+   for rule_num, rule in ipairs(self.rules) do
       if rule.cfilter(d:payload()) then
          return rule
       end
@@ -280,11 +279,11 @@ function DDoS:report()
    end
 
    print("Traffic rules:")
-   for rule_name,rule in pairs(self.rules) do
-      print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule_name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
+   for rule_num,rule in ipairs(self.rules) do
+      print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule.name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
       for src_ip,src_info in pairs(self.sources) do
-         if src_info.rule[rule_name] ~= nil then
-            local sr_info = src_info.rule[rule_name]
+         if src_info.rule[rule.name] ~= nil then
+            local sr_info = src_info.rule[rule.name]
 
             -- calculate rate of packets
             -- TODO: calculate real PPS rate
@@ -331,7 +330,8 @@ function test_logic()
    local basic_apps = require("apps.basic.basic_apps")
 
    local rules = {
-      ntp = {
+      {
+         name = "ntp",
          filter = "udp and src port 123",
          pps_rate = 10,
          pps_burst = 20,
@@ -381,7 +381,8 @@ function test_performance()
 
    print("== Perf test - fast path - dropping NTP by match!")
    local rules = {
-      ntp = {
+      {
+         name = "ntp",
          filter = "udp and src port 123",
          pps_rate = 10
       }
