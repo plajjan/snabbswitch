@@ -200,7 +200,7 @@ end
 
 -- match against our BPF rules and return name of the match
 function DDoS:bpf_match(d)
-   for rule_name, rule in pairs(self.rules) do
+   for rule_name, rule in ipairs(self.rules) do
       if rule.cfilter(d:payload()) then
          return rule
       end
