@@ -10,6 +10,7 @@ local ipv6 = require("lib.protocol.ipv6")
 local lib = require("core.lib")
 local link = require("core.link")
 local packet = require("core.packet")
+local pf = require("pf")        -- pflua
 
 local C = ffi.C
 
@@ -39,8 +40,8 @@ function DDoS:new (arg)
    for rule_name, rule in pairs(self.rules) do
       rule.name = rule_name
       -- compile the filter
-      local filter, errmsg = filter:new(rule.filter)
-      assert(filter, errmsg and ffi.string(errmsg))
+      local filter = pf.compile_filter(rule.filter)
+      assert(filter)
       rule.cfilter = filter
 
       -- use default burst value of 2*rate
@@ -200,7 +201,7 @@ end
 -- match against our BPF rules and return name of the match
 function DDoS:bpf_match(d)
    for rule_name, rule in pairs(self.rules) do
-      if rule.cfilter:match(d:payload()) then
+      if rule.cfilter(d:payload()) then
          return rule
       end
    end
@@ -378,6 +379,7 @@ function test_performance()
    local pcap = require("apps.pcap.pcap")
    local basic_apps = require("apps.basic.basic_apps")
 
+   print("== Perf test - fast path - dropping NTP by match!")
    local rules = {
       ntp = {
          filter = "udp and src port 123",
@@ -406,7 +408,6 @@ function test_performance()
       'repeating'
    ))
 
-   print("== Perf test - dropping NTP by match!")
 --   engine.Hz = false
    local start_time = tonumber(C.get_time_ns())
    app.main({duration = 20})
@@ -423,7 +424,6 @@ function test_performance()
    print("source sent: " .. app.app_table.source.output.output.stats.txpackets)
    print("repeater sent: " .. app.app_table.repeater.output.output.stats.txpackets)
    print("sink received: " .. app.app_table.sink.input.input.stats.rxpackets)
-   -- TODO: fix effective rate, seconds_to_run isn't correct anymore
    print("Effective rate: " .. string.format("%0.1f", tostring(app.app_table.repeater.output.output.stats.txpackets / elapsed_time)))
    return true
 end
