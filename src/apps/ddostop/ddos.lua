@@ -199,8 +199,12 @@ end
 
 -- match against our BPF rules and return name of the match
 function DDoS:bpf_match(d)
-   for rule_num, rule in ipairs(self.rules) do
-      if rule.cfilter(d:payload()) then
+   local rules = self.rules
+   local len = #rules
+   local mem, size = d:payload()
+   for i = 1, len do
+      local rule = self.rules[i]
+      if rule.cfilter(mem, size) then
          return rule
       end
    end
