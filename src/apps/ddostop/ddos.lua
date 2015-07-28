@@ -396,7 +396,7 @@ function test_performance()
    }
 
    local c = config.new()
-   config.app(c, "source", pcap.PcapReader, "apps/ddostop/selftest.cap.input")
+   config.app(c, "source", pcap.PcapReader, "apps/ddostop/ipv4-ntp.pcap")
    config.app(c, "repeater", basic_apps.Repeater)
    config.app(c, "ddos", DDoS, { rules = rules })
    config.app(c, "sink", basic_apps.Sink)
