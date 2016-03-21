@@ -52,9 +52,6 @@ function DDoS:new (arg)
       end
    end
 
-   -- datagram object for reuse
-   self.d = datagram:new()
-
    -- store casted ethertypes for fast matching
    self.ethertype_ipv4 = ffi.cast("uint16_t", 8)
    self.ethertype_ipv6 = ffi.cast("uint16_t", 56710)
@@ -148,7 +145,7 @@ function DDoS:process_packet(i, o)
       return
    end
 
-   d = self.d:reuse(p, ethernet)
+   d = datagram:new(p, ethernet)
 
    -- match up against our filter rules
    local rule = self:bpf_match(d)
@@ -238,11 +235,11 @@ end
 
 function DDoS:get_stats_snapshot()
    return {
-      rxpackets = self.input.input.stats.txpackets,
-      rxbytes = self.input.input.stats.txbytes,
-      txpackets = self.output.output.stats.txpackets,
-      txbytes = self.output.output.stats.txbytes,
-      txdrop = self.output.output.stats.txdrop,
+      rxpackets = link.stats(self.input.input).txpackets,
+      rxbytes = link.stats(self.input.input).txbytes,
+      txpackets = link.stats(self.output.output).txpackets,
+      txbytes = link.stats(self.output.output).txbytes,
+      txdrop = link.stats(self.output.output).txdrop,
       time = tonumber(C.get_time_ns()),
    }
 end
@@ -429,9 +426,9 @@ function test_performance()
    local elapsed_time = (stop_time - start_time) / 1e9
    print("elapsed time ", elapsed_time, "seconds")
 
-   print("source sent: " .. app.app_table.source.output.output.stats.txpackets)
-   print("repeater sent: " .. app.app_table.repeater.output.output.stats.txpackets)
-   print("sink received: " .. app.app_table.sink.input.input.stats.rxpackets)
-   print("Effective rate: " .. string.format("%0.1f", tostring(app.app_table.repeater.output.output.stats.txpackets / elapsed_time)))
+   print("source sent: " .. link.stats(app.app_table.source.output.output).txpackets)
+   print("repeater sent: " .. link.stats(app.app_table.repeater.output.output).txpackets)
+   print("sink received: " .. link.stats(app.app_table.sink.input.input).rxpackets)
+   print("Effective rate: " .. string.format("%0.1f", tostring(link.stats(app.app_table.repeater.output.output).txpackets / elapsed_time)))
    return true
 end
