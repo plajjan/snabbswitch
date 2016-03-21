@@ -11,6 +11,7 @@ local lib = require("core.lib")
 local link = require("core.link")
 local packet = require("core.packet")
 local pf = require("pf")        -- pflua
+local ctable = require("lib.ctable")
 
 local C = ffi.C
 
@@ -19,10 +20,20 @@ DDoS = {}
 -- I don't know what I'm doing
 function DDoS:new (arg)
    local conf = arg and config.parse_app_arg(arg) or {}
+   local params = {
+      key_type = ffi.typeof('uint32_t'),
+      value_type = ffi.typeof('uint32_t'),
+      hash_fn = ctable.hash_32,
+      max_occupancy_rate = 0.4,
+      initial_size = math.ceil(1000000 / 0.4)
+   }
+
+   local bl4 = ctable.new(params)
+
    local o =
    {
       blacklist = {
-         ipv4 = {},
+         ipv4 = bl4,
          ipv6 = {}
       },
       sources = {},
@@ -70,9 +81,9 @@ end
 
 function DDoS:periodic()
    -- unblock old entries in blacklist
-   for src_ip, ble in pairs(self.blacklist.ipv4) do
-      if ble.block_until < tonumber(app.now()) then
-         self.blacklist.ipv4[src_ip] = nil
+   for entry in self.blacklist.ipv4:iterate() do
+      if entry.value < tonumber(app.now()) then
+         self.blacklist.ipv4:remove(entry.key, true)
       end
    end
    for src_ip, ble in pairs(self.blacklist.ipv6) do
@@ -82,7 +93,6 @@ function DDoS:periodic()
    end
 
    -- TODO do stuff with sources struct
-
 end
 
 
@@ -134,13 +144,8 @@ function DDoS:process_packet(i, o)
    end
 
    -- short cut for stuff in blacklist that is in state block
-   -- TODO: blacklist is a table. use a Radix trie instead!
-   -- Doing a simple match against a static IP cast as a uint32_t increases
-   -- performance to 23Mpps on my laptop from 9Mpps when matching in this table.
-   -- Using a Patricia tree, I hope we can end up somewhere in between..
-   -- 14.8Mpps would be perfect ;)
-   local ble = self.blacklist[afi][src_ip]
-   if ble and ble.action == "block" then
+   local ble = self.blacklist[afi]:lookup_ptr(src_ip)
+   if ble then
       packet.free(p)
       return
    end
@@ -181,7 +186,7 @@ function DDoS:process_packet(i, o)
       local block_time = math.min(src.last_block_time * 2, self.max_block_time)
       src.block_until = cur_now + block_time
       src.last_block_time = block_time
-      self.blacklist[afi][src_ip] = { action = "block", block_until = src.block_until - 5 }
+      self.blacklist[afi]:add(src_ip, ffi.cast("uint32_t", src.block_until - 5))
    end
 
    if src.block_until and src.block_until < cur_now then
@@ -274,32 +279,36 @@ function DDoS:report()
    print("Configured maximum block period: " .. self.max_block_time .. " seconds")
    print("Rx: " .. num_prefix((cur.rxpackets - last.rxpackets) / ((cur.time - last.time) / 1e9)) .. "pps / " .. cur.rxpackets .. " packets / " .. cur.rxbytes .. " bytes")
    print("Tx: " .. num_prefix((cur.txpackets - last.txpackets) / ((cur.time - last.time) / 1e9)) .. "pps / " .. cur.txpackets .. " packets / " .. cur.txbytes .. " bytes / " .. cur.txdrop .. " packet drops")
+
+   num_entries = 0
    print("Blacklist:")
-   for src_ip,ble in pairs(self.blacklist.ipv4) do
-      print("  " .. ntop(src_ip) .. " blocked for another " .. string.format("%0.1f", tostring(ble.block_until - tonumber(app.now()))) .. " seconds")
+   for entry in self.blacklist.ipv4:iterate() do
+      num_entries = num_entries + 1
+--      print("  " .. ntop(entry.key) .. " blocked for another " .. string.format("%0.1f", tostring(entry.value - tonumber(app.now()))) .. " seconds")
    end
+   print("  " .. num_entries .. " total entries")
 
-   print("Traffic rules:")
-   for rule_num,rule in ipairs(self.rules) do
-      print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule.name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
-      for src_ip,src_info in pairs(self.sources) do
-         if src_info.rule[rule.name] ~= nil then
-            local sr_info = src_info.rule[rule.name]
-
-            -- calculate rate of packets
-            -- TODO: calculate real PPS rate
-            pps_tokens = string.format("%5s", "-")
-
-            str = string.format("  %15s last: %d tokens: %s ", ntop(src_ip), tonumber(app.now())-sr_info.last_time, pps_tokens)
-            if sr_info.block_until == nil then
-               str = string.format("%s %-7s", str, "allowed")
-            else
-               str = string.format("%s %-7s", str, "blocked for another " .. string.format("%0.1f", tostring(sr_info.block_until - tonumber(app.now()))) .. " seconds")
-            end
-            print(str)
-         end
-      end
-   end
+--   print("Traffic rules:")
+--   for rule_num,rule in ipairs(self.rules) do
+--      print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule.name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
+--      for src_ip,src_info in pairs(self.sources) do
+--         if src_info.rule[rule.name] ~= nil then
+--            local sr_info = src_info.rule[rule.name]
+--
+--            -- calculate rate of packets
+--            -- TODO: calculate real PPS rate
+--            pps_tokens = string.format("%5s", "-")
+--
+--            str = string.format("  %15s last: %d tokens: %s ", ntop(src_ip), tonumber(app.now())-sr_info.last_time, pps_tokens)
+--            if sr_info.block_until == nil then
+--               str = string.format("%s %-7s", str, "allowed")
+--            else
+--               str = string.format("%s %-7s", str, "blocked for another " .. string.format("%0.1f", tostring(sr_info.block_until - tonumber(app.now()))) .. " seconds")
+--            end
+--            print(str)
+--         end
+--      end
+--   end
 
    self.last_stats = cur
 end
