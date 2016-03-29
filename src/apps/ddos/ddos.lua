@@ -26,7 +26,7 @@ function DDoS:new (arg)
          ipv6 = {}
       },
       sources = {},
-      rules = conf.rules,
+      mitigations = conf.mitigations,
       initial_block_time = conf.initial_block_time or 10,
       max_block_time = conf.max_block_time or 600,
       last_report = nil
@@ -37,20 +37,25 @@ function DDoS:new (arg)
    assert(self.max_block_time >= 5, "max_block_time must be at least 5 seconds")
 
    -- pre-process rules
-   for rule_num, rule in pairs(self.rules) do
-      -- compile the filter
-      local filter = pf.compile_filter(rule.filter)
-      assert(filter)
-      rule.cfilter = filter
+   for dst_ip, mc in pairs(conf.mitigations) do
+      self.blacklist["ipv4"][dst_ip] = {}
 
-      -- use default burst value of 2*rate
-      if rule.pps_burst == nil and rule.pps_rate then
-         rule.pps_burst = 2 * rule.pps_rate
-      end
-      if rule.bps_burst == nil and rule.bps_rate then
-         rule.bps_burst = 2 * rule.bps_rate
+      for rule_num, rule in ipairs(mc.rules) do
+         -- compile the filter
+         local filter = pf.compile_filter(rule.filter)
+         assert(filter)
+         rule.cfilter = filter
+
+         -- use default burst value of 2*rate
+         if rule.pps_burst == nil and rule.pps_rate then
+            rule.pps_burst = 2 * rule.pps_rate
+         end
+         if rule.bps_burst == nil and rule.bps_rate then
+            rule.bps_burst = 2 * rule.bps_rate
+         end
       end
    end
+
 
    -- store casted ethertypes for fast matching
    self.ethertype_ipv4 = ffi.cast("uint16_t", 8)
@@ -70,19 +75,14 @@ end
 
 function DDoS:periodic()
    -- unblock old entries in blacklist
-   for src_ip, ble in pairs(self.blacklist.ipv4) do
-      if ble.block_until < tonumber(app.now()) then
-         self.blacklist.ipv4[src_ip] = nil
+   for dst_ip, bl in pairs(self.blacklist.ipv4) do
+      for src_ip, ble in pairs(bl) do
+         if ble.block_until < tonumber(app.now()) then
+            self.blacklist.ipv4[dst_ip][src_ip] = nil
+         end
       end
    end
-   for src_ip, ble in pairs(self.blacklist.ipv6) do
-      if ble.block_until < tonumber(app.now()) then
-         self.blacklist.ipv6[src_ip] = nil
-      end
-   end
-
    -- TODO do stuff with sources struct
-
 end
 
 
@@ -114,41 +114,42 @@ function DDoS:process_packet(i, o)
    -- get ethertype of packet
    local ethertype = ffi.cast("uint16_t*", packet.data(p) + 12)[0]
 
-   -- TODO: don't use ntop to convert IP to a string and base hash lookup on a
-   -- string - use a Patricia trie or similar instead!
-
-   -- dig out src IP from packet
-   local src_ip
-   if ethertype == self.ethertype_ipv4 then
-      afi = "ipv4"
-      -- IPv4 source address is 26 bytes in
-      src_ip = ffi.cast("uint32_t*", packet.data(p) + 26)[0]
-   elseif ethertype == self.ethertype_ipv6 then
-      afi = "ipv6"
-      -- TODO: this is slow, do something similar to IPv4
-      -- IPv6 source address is 22 bytes in
-      src_ip = ipv6:ntop(packet.data(p) + 22)
-   else
-      packet.free(p)
+   -- just forward non-IPv4 packets
+   if ethertype ~= self.ethertype_ipv4 then
+      link.transmit(o, p)
       return
    end
 
+   -- IPv4 source address is 26 bytes in
+   local afi = "ipv4"
+   local src_ip = ffi.cast("uint32_t*", packet.data(p) + 26)[0]
+   local dst_ip = ffi.cast("uint32_t*", packet.data(p) + 30)[0]
+
+   -----------------------------------------
+
+   -- get blacklist
+   local bl = self.blacklist[afi][dst_ip]
    -- short cut for stuff in blacklist that is in state block
    -- TODO: blacklist is a table. use a Radix trie instead!
    -- Doing a simple match against a static IP cast as a uint32_t increases
    -- performance to 23Mpps on my laptop from 9Mpps when matching in this table.
    -- Using a Patricia tree, I hope we can end up somewhere in between..
    -- 14.8Mpps would be perfect ;)
-   local ble = self.blacklist[afi][src_ip]
+   local ble = bl[src_ip]
    if ble and ble.action == "block" then
       packet.free(p)
       return
    end
 
+   ------------------------------------------
+   -- retrieve mitigation config
+   local m = self.mitigations[dst_ip]
+
+   -- TODO: this is utterly slow - speed it up!
    d = datagram:new(p, ethernet)
 
    -- match up against our filter rules
-   local rule = self:bpf_match(d)
+   local rule = self:bpf_match(d, m.rules)
    -- didn't match any rule, so permit it
    if rule == nil then
       link.transmit(o, p)
@@ -181,7 +182,7 @@ function DDoS:process_packet(i, o)
       local block_time = math.min(src.last_block_time * 2, self.max_block_time)
       src.block_until = cur_now + block_time
       src.last_block_time = block_time
-      self.blacklist[afi][src_ip] = { action = "block", block_until = src.block_until - 5 }
+      self.blacklist[afi][dst_ip][src_ip] = { action = "block", block_until = src.block_until - 5 }
    end
 
    if src.block_until and src.block_until < cur_now then
@@ -195,12 +196,11 @@ end
 
 
 -- match against our BPF rules and return name of the match
-function DDoS:bpf_match(d)
-   local rules = self.rules
+function DDoS:bpf_match(d, rules)
    local len = #rules
    local mem, size = d:payload()
    for i = 1, len do
-      local rule = self.rules[i]
+      local rule = rules[i]
       if rule.cfilter(mem, size) then
          return rule
       end
@@ -274,32 +274,35 @@ function DDoS:report()
    print("Configured maximum block period: " .. self.max_block_time .. " seconds")
    print("Rx: " .. num_prefix((cur.rxpackets - last.rxpackets) / ((cur.time - last.time) / 1e9)) .. "pps / " .. cur.rxpackets .. " packets / " .. cur.rxbytes .. " bytes")
    print("Tx: " .. num_prefix((cur.txpackets - last.txpackets) / ((cur.time - last.time) / 1e9)) .. "pps / " .. cur.txpackets .. " packets / " .. cur.txbytes .. " bytes / " .. cur.txdrop .. " packet drops")
-   print("Blacklist:")
-   for src_ip,ble in pairs(self.blacklist.ipv4) do
-      print("  " .. ntop(src_ip) .. " blocked for another " .. string.format("%0.1f", tostring(ble.block_until - tonumber(app.now()))) .. " seconds")
-   end
-
-   print("Traffic rules:")
-   for rule_num,rule in ipairs(self.rules) do
-      print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule.name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
-      for src_ip,src_info in pairs(self.sources) do
-         if src_info.rule[rule.name] ~= nil then
-            local sr_info = src_info.rule[rule.name]
-
-            -- calculate rate of packets
-            -- TODO: calculate real PPS rate
-            pps_tokens = string.format("%5s", "-")
-
-            str = string.format("  %15s last: %d tokens: %s ", ntop(src_ip), tonumber(app.now())-sr_info.last_time, pps_tokens)
-            if sr_info.block_until == nil then
-               str = string.format("%s %-7s", str, "allowed")
-            else
-               str = string.format("%s %-7s", str, "blocked for another " .. string.format("%0.1f", tostring(sr_info.block_until - tonumber(app.now()))) .. " seconds")
-            end
-            print(str)
-         end
+   for dst_ip, mc in pairs(self.mitigations) do
+      print("Mitigation " .. ntop(dst_ip))
+      print("Blacklist:")
+      for src_ip, ble in pairs(self.blacklist.ipv4[dst_ip]) do
+         print("  " .. ntop(src_ip) .. " blocked for another " .. string.format("%0.1f", tostring(ble.block_until - tonumber(app.now()))) .. " seconds")
       end
    end
+
+--   print("Traffic rules:")
+--   for rule_num,rule in ipairs(self.rules) do
+--      print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule.name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
+--      for src_ip,src_info in pairs(self.sources) do
+--         if src_info.rule[rule.name] ~= nil then
+--            local sr_info = src_info.rule[rule.name]
+--
+--            -- calculate rate of packets
+--            -- TODO: calculate real PPS rate
+--            pps_tokens = string.format("%5s", "-")
+--
+--            str = string.format("  %15s last: %d tokens: %s ", ntop(src_ip), tonumber(app.now())-sr_info.last_time, pps_tokens)
+--            if sr_info.block_until == nil then
+--               str = string.format("%s %-7s", str, "allowed")
+--            else
+--               str = string.format("%s %-7s", str, "blocked for another " .. string.format("%0.1f", tostring(sr_info.block_until - tonumber(app.now()))) .. " seconds")
+--            end
+--            print(str)
+--         end
+--      end
+--   end
 
    self.last_stats = cur
 end
@@ -330,23 +333,27 @@ function test_logic()
    local pcap = require("apps.pcap.pcap")
    local basic_apps = require("apps.basic.basic_apps")
 
-   local rules = {
-      {
-         name = "ntp",
-         filter = "udp and src port 123",
-         pps_rate = 10,
-         pps_burst = 19, -- should really be 20, but seems we get off-by-one
-                         -- error, so apps passes 21 packets and block the rest
-                         -- when using burst 20. Since the test expects exactly
-                         -- 20 packets we decrease this to 19
-         bps_rate = nil,
-         bps_burst = nil
+   local mitigations = {}
+   -- 130.244.97.11 = 190968962
+   mitigations[190968962] = {
+      rules = {
+         {
+            name = "ntp",
+            filter = "udp and src port 123",
+            pps_rate = 10,
+            pps_burst = 19, -- should really be 20, but seems we get off-by-one
+                            -- error, so apps passes 21 packets and block the rest
+                            -- when using burst 20. Since the test expects exactly
+                            -- 20 packets we decrease this to 19
+            bps_rate = nil,
+            bps_burst = nil
+         }
       }
    }
 
    local c = config.new()
    config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
-   config.app(c, "ddos", DDoS, { rules = rules })
+   config.app(c, "ddos", DDoS, { mitigations = mitigations })
    config.app(c, "sink", pcap.PcapWriter, "apps/ddos/selftest.cap.output")
    config.link(c, "source.output -> ddos.input")
    config.link(c, "ddos.output -> sink.input")
@@ -384,18 +391,22 @@ function test_performance()
    local basic_apps = require("apps.basic.basic_apps")
 
    print("== Perf test - fast path - dropping NTP by match!")
-   local rules = {
-      {
-         name = "ntp",
-         filter = "udp and src port 123",
-         pps_rate = 10
+   local mitigations = {}
+   -- 130.244.97.11 = 190968962
+   mitigations[190968962] = {
+      rules = {
+         {
+            name = "ntp",
+            filter = "udp and src port 123",
+            pps_rate = 10
+         }
       }
    }
 
    local c = config.new()
    config.app(c, "source", pcap.PcapReader, "apps/ddos/ipv4-ntp.pcap")
    config.app(c, "repeater", basic_apps.Repeater)
-   config.app(c, "ddos", DDoS, { rules = rules })
+   config.app(c, "ddos", DDoS, { mitigations = mitigations })
    config.app(c, "sink", basic_apps.Sink)
    config.link(c, "source.output -> repeater.input")
    config.link(c, "repeater.output -> ddos.input")
