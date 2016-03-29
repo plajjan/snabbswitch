@@ -1,8 +1,6 @@
 module(..., package.seeall)
 
 local app = require("core.app")
-local datagram = require("lib.protocol.datagram")
-local ethernet = require("lib.protocol.ethernet")
 local ffi = require("ffi")
 local filter = require("lib.pcap.filter")
 local ipv4 = require("lib.protocol.ipv4")
@@ -145,11 +143,8 @@ function DDoS:process_packet(i, o)
    -- retrieve mitigation config
    local m = self.mitigations[dst_ip]
 
-   -- TODO: this is utterly slow - speed it up!
-   d = datagram:new(p, ethernet)
-
    -- match up against our filter rules
-   local rule = self:bpf_match(d, m.rules)
+   local rule = self:bpf_match(p, m.rules)
    -- didn't match any rule, so permit it
    if rule == nil then
       link.transmit(o, p)
@@ -196,12 +191,11 @@ end
 
 
 -- match against our BPF rules and return name of the match
-function DDoS:bpf_match(d, rules)
+function DDoS:bpf_match(p, rules)
    local len = #rules
-   local mem, size = d:payload()
    for i = 1, len do
       local rule = rules[i]
-      if rule.cfilter(mem, size) then
+      if rule.cfilter(p.data, p.length) then
          return rule
       end
    end
