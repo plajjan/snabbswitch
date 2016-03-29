@@ -5,6 +5,7 @@ Usage:
   -c, --config              Configuration file
   -C, --clean               Interface for clean traffic
   -D, --dirty               Interface for dirty traffic
+  -V, --vlan                VLAN tag for clean traffic
 
 Mitigate DDoS attacks fast and with style.
 
@@ -18,6 +19,11 @@ create the devices first:
 
 Then you can attach tcpdump on the clean side and inject traffic to be run
 through SnabbDDoS on the dirty side.
+
+Clean traffic can optionally be VLAN encapsulated so that it is possible to use
+the same physical interface for dirty and clean traffic but still keep
+separation. Since traffic is completely unidirection through snabbddos this is
+a great way to halve the number of required interfaces.
 
 The configuration file is in JSON format and lists the mitigations that you
 want with rules for each mitigation, for example:
