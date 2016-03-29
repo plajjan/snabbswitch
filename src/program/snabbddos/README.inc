@@ -8,6 +8,17 @@ Usage:
 
 Mitigate DDoS attacks fast and with style.
 
+The interface for clean and dirty traffic are tap interfaces. You need to
+create the devices first:
+
+    ip tuntap create dev dirty mode tap
+    ip tuntap create dev clean mode tap
+    ifconfig dirty up
+    ifconfig clean up
+
+Then you can attach tcpdump on the clean side and inject traffic to be run
+through SnabbDDoS on the dirty side.
+
 The configuration file is in JSON format and lists the mitigations that you
 want with rules for each mitigation, for example:
 
