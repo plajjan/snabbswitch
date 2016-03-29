@@ -7,7 +7,6 @@ local pci       = require("lib.hardware.pci")
 local intel10g  = require("apps.intel.intel10g")
 local intel_app = require("apps.intel.intel_app")
 local ipv4      = require("lib.protocol.ipv4")
-local json      = require("lib.json")
 local lib       = require("core.lib")
 local main      = require("core.main")
 
@@ -46,16 +45,6 @@ function run (args)
    config.app(c, "dirty", Tap, intf_dirty)
    config.app(c, "clean", Tap, intf_clean)
 
-   -- read mitigations configuration
-   local config_file = assert(io.open(config_file_path, "r"))
-   local config_json = config_file:read("*all")
-   local mitigation_config = {}
-   -- prepare the config
-   for entry, value in pairs(json.decode(config_json)) do
-      -- convert IP address tring to numbers in network byte order
-      mitigation_config[ddos.pton(entry)] = value
-   end
-
    if report then
       timer.activate(timer.new(
          "report",
@@ -67,8 +56,11 @@ function run (args)
       ))
    end
 
-   config.app(c, "ddos", ddos.DDoS, { mitigations = mitigation_config })
+   -- TODO: we need the reverse path set up as well so we can reply to ARP
+   -- packets but first we need the ARP app
+   config.app(c, "ddos", ddos.DDoS, { config_file_path = config_file_path })
    config.link(c, "dirty.output -> ddos.input")
+   -- if vlan_tag is set we tag all egress/clean packets with a VLAN tag
    if vlan_tag then
       print("Using VLAN tag: " .. vlan_tag)
       config.app(c, "vlan_tagger", vlan.Tagger, { tag = vlan_tag })

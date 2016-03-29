@@ -5,6 +5,7 @@ local ffi = require("ffi")
 local filter = require("lib.pcap.filter")
 local ipv4 = require("lib.protocol.ipv4")
 local ipv6 = require("lib.protocol.ipv6")
+local json = require("lib.json")
 local lib = require("core.lib")
 local link = require("core.link")
 local packet = require("core.packet")
@@ -19,6 +20,7 @@ function DDoS:new (arg)
    local conf = arg and config.parse_app_arg(arg) or {}
    local o =
    {
+      config_file_path = conf.config_file_path,
       blacklist = {
          ipv4 = {},
          ipv6 = {}
@@ -34,8 +36,39 @@ function DDoS:new (arg)
    assert(self.initial_block_time >= 5, "initial_block_time must be at least 5 seconds")
    assert(self.max_block_time >= 5, "max_block_time must be at least 5 seconds")
 
+   self:load_config()
+
+   -- store casted ethertypes for fast matching
+   self.ethertype_ipv4 = ffi.cast("uint16_t", 8)
+   self.ethertype_ipv6 = ffi.cast("uint16_t", 56710)
+
+   -- schedule periodic task every second
+   timer.activate(timer.new(
+      "periodic",
+      function () self:periodic() end,
+      1e9, -- every second
+      'repeating'
+   ))
+
+   return self
+end
+
+function DDoS:load_config()
+   print("-- Loading configuration")
+   local config_file = assert(io.open(self.config_file_path, "r"))
+   local config_json = config_file:read("*all")
+
+   local mitigation_config = {}
+   -- prepare the config
+   for entry, value in pairs(json.decode(config_json)) do
+      -- convert IP address tring to numbers in network byte order
+      mitigation_config[pton(entry)] = value
+   end
+   self.mitigations = mitigation_config
+
+   -- TODO: I think we can incorporate this into the loop above
    -- pre-process rules
-   for dst_ip, mc in pairs(conf.mitigations) do
+   for dst_ip, mc in pairs(self.mitigations) do
       self.blacklist["ipv4"][dst_ip] = {}
 
       for rule_num, rule in ipairs(mc.rules) do
@@ -54,24 +87,15 @@ function DDoS:new (arg)
       end
    end
 
-
-   -- store casted ethertypes for fast matching
-   self.ethertype_ipv4 = ffi.cast("uint16_t", 8)
-   self.ethertype_ipv6 = ffi.cast("uint16_t", 56710)
-
-   -- schedule periodic task every second
-   timer.activate(timer.new(
-      "periodic",
-      function () self:periodic() end,
-      1e9, -- every second
-      'repeating'
-   ))
-
-   return self
-end 
-
+   -- clear out all data we have for various sources since it might be outdated
+   -- by our updated config
+   self.sources = {}
+end
 
 function DDoS:periodic()
+   -- re-read mitigation config
+   self:load_config()
+
    -- unblock old entries in blacklist
    for dst_ip, bl in pairs(self.blacklist.ipv4) do
       for src_ip, ble in pairs(bl) do
