@@ -135,23 +135,25 @@ function DDoS:process_packet(i, o)
 
    -----------------------------------------
 
+   -- short cut for stuff in blacklist that is in state block
    -- get blacklist
    local bl = self.blacklist[afi][dst_ip]
-   -- short cut for stuff in blacklist that is in state block
-   -- TODO: blacklist is a table. use a Radix trie instead!
-   -- Doing a simple match against a static IP cast as a uint32_t increases
-   -- performance to 23Mpps on my laptop from 9Mpps when matching in this table.
-   -- Using a Patricia tree, I hope we can end up somewhere in between..
-   -- 14.8Mpps would be perfect ;)
-   local ble = bl[src_ip]
-   if ble and ble.action == "block" then
-      packet.free(p)
-      return
+   if bl then
+      local ble = bl[src_ip]
+      if ble and ble.action == "block" then
+         packet.free(p)
+         return
+      end
    end
 
    ------------------------------------------
    -- retrieve mitigation config
    local m = self.mitigations[dst_ip]
+   -- no mitigation configured for this dst ip so we pass the packet
+   if not m then
+      link.transmit(o, p)
+      return
+   end
 
    -- match up against our filter rules
    local rule = self:bpf_match(p, m.rules)
