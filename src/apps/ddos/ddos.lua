@@ -96,12 +96,21 @@ function DDoS:push ()
    end
 end
 
+-- convert integer to dotted quad IP string. also reverses byte order since
+-- internal data structures are in network byte order
 function ntop(num)
    oct1 = math.floor(num) % 2 ^ 8
    oct2 = math.floor(num / 2 ^ 8) % 2 ^ 8
    oct3 = math.floor(num / 2 ^ 16) % 2 ^ 8
    oct4 = math.floor(num / 2 ^ 24) % 2 ^ 8
    return oct1 .. "." .. oct2 .. "." .. oct3 .. "." .. oct4
+end
+
+-- convert IP address string in dotted quad format to integer. will also reverse
+-- byte order since internal data structures are in network byte order
+function pton(str)
+   local o1,o2,o3,o4 = str:match("(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)" )
+   return 2^24*o4 + 2^16*o3 + 2^8*o2 + o1
 end
 
 
@@ -118,9 +127,10 @@ function DDoS:process_packet(i, o)
       return
    end
 
-   -- IPv4 source address is 26 bytes in
    local afi = "ipv4"
+   -- IPv4 source address is 26 bytes in
    local src_ip = ffi.cast("uint32_t*", packet.data(p) + 26)[0]
+   -- IPv4 destination address is 30 bytes in
    local dst_ip = ffi.cast("uint32_t*", packet.data(p) + 30)[0]
 
    -----------------------------------------
