@@ -188,7 +188,7 @@ function DDoS:process_packet(i, o)
    end
 
    local cur_now = tonumber(app.now())
-   src = self:get_src(src_ip, rule)
+   src = self:get_src(dst_ip, src_ip, rule)
 
    -- uses http://en.wikipedia.org/wiki/Token_bucket algorithm
    -- figure out pps rate
@@ -240,18 +240,22 @@ end
 
 
 -- return data struct on source ip for specific rule
-function DDoS:get_src(src_ip, rule)
+function DDoS:get_src(dst_ip, src_ip, rule)
    -- get our data struct on that source IP
    -- TODO: we need to periodically clean this data struct up so it doesn't just fill up and consume all memory
 
-   if self.sources[src_ip] == nil then
-      self.sources[src_ip] = {
+   if self.sources[dst_ip] == nil then
+      self.sources[dst_ip] = {}
+   end
+
+   if self.sources[dst_ip][src_ip] == nil then
+      self.sources[dst_ip][src_ip] = {
          rule = {}
          }
    end
 
-   if self.sources[src_ip].rule[rule.name] == nil then
-      self.sources[src_ip].rule[rule.name] = {
+   if self.sources[dst_ip][src_ip].rule[rule.name] == nil then
+      self.sources[dst_ip][src_ip].rule[rule.name] = {
          last_time = tonumber(app.now()),
          pps_tokens = rule.pps_burst,
          bps_tokens = rule.bps_burst,
@@ -259,7 +263,7 @@ function DDoS:get_src(src_ip, rule)
          last_block_time = self.initial_block_time / 2
       }
    end
-   return self.sources[src_ip].rule[rule.name]
+   return self.sources[dst_ip][src_ip].rule[rule.name]
 end
 
 
