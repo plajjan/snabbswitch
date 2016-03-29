@@ -345,9 +345,9 @@ function test_logic()
    }
 
    local c = config.new()
-   config.app(c, "source", pcap.PcapReader, "apps/ddostop/selftest.cap.input")
+   config.app(c, "source", pcap.PcapReader, "apps/ddos/selftest.cap.input")
    config.app(c, "ddos", DDoS, { rules = rules })
-   config.app(c, "sink", pcap.PcapWriter, "apps/ddostop/selftest.cap.output")
+   config.app(c, "sink", pcap.PcapWriter, "apps/ddos/selftest.cap.output")
    config.link(c, "source.output -> ddos.input")
    config.link(c, "ddos.output -> sink.input")
    app.configure(c)
@@ -363,12 +363,12 @@ function test_logic()
 --   app.main({duration = 5}) -- should be long enough...
    app.breathe()
    -- Check results
-   if io.open("apps/ddostop/selftest.cap.output"):read('*a') ~=
-      io.open("apps/ddostop/selftest.cap.expect-1"):read('*a') then
+   if io.open("apps/ddos/selftest.cap.output"):read('*a') ~=
+      io.open("apps/ddos/selftest.cap.expect-1"):read('*a') then
       print([[file selftest.cap.output does not match selftest.cap.expect.
       Check for the mismatch like this (example):
-      tshark -Vnr apps/ddostop/selftest.cap.output > /tmp/selftest.cap.output.txt
-      tshark -Vnr apps/ddostop/selftest.cap.expect-1 > /tmp/selftest.cap.expect-1.txt
+      tshark -Vnr apps/ddos/selftest.cap.output > /tmp/selftest.cap.output.txt
+      tshark -Vnr apps/ddos/selftest.cap.expect-1 > /tmp/selftest.cap.expect-1.txt
       diff -u /tmp/selftest.cap.{output,expect-1}.txt | less ]])
       ok = false
    else
@@ -393,7 +393,7 @@ function test_performance()
    }
 
    local c = config.new()
-   config.app(c, "source", pcap.PcapReader, "apps/ddostop/ipv4-ntp.pcap")
+   config.app(c, "source", pcap.PcapReader, "apps/ddos/ipv4-ntp.pcap")
    config.app(c, "repeater", basic_apps.Repeater)
    config.app(c, "ddos", DDoS, { rules = rules })
    config.app(c, "sink", basic_apps.Sink)
