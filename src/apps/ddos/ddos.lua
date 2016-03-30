@@ -21,6 +21,7 @@ function DDoS:new (arg)
    local o =
    {
       config_file_path = conf.config_file_path,
+      last_config = nil,
       blacklist = {
          ipv4 = {},
          ipv6 = {}
@@ -54,13 +55,18 @@ function DDoS:new (arg)
 end
 
 function DDoS:load_config()
-   print("-- Loading configuration")
    local config_file = assert(io.open(self.config_file_path, "r"))
-   local config_json = config_file:read("*all")
+   local config_raw = config_file:read("*all")
+   -- skip loading if config is identical to last one
+   if config_raw == self.last_config then
+      return
+   end
+   self.last_config = config_raw
+   local config_json = json.decode(config_raw)
 
    local mitigation_config = {}
    -- prepare the config
-   for entry, value in pairs(json.decode(config_json)) do
+   for entry, value in pairs(config_json) do
       -- convert IP address tring to numbers in network byte order
       mitigation_config[pton(entry)] = value
    end

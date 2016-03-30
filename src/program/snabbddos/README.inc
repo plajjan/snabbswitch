@@ -2,7 +2,7 @@ Usage:
   snabbddos [OPTIONS]
 
   -h, --help                Print usage information
-  -c, --config              Configuration file
+  -m, --mconfig             Mitigation config file
   -C, --clean               Interface for clean traffic
   -D, --dirty               Interface for dirty traffic
   -V, --vlan                VLAN tag for clean traffic
@@ -25,8 +25,10 @@ the same physical interface for dirty and clean traffic but still keep
 separation. Since traffic is completely unidirection through snabbddos this is
 a great way to halve the number of required interfaces.
 
-The configuration file is in JSON format and lists the mitigations that you
-want with rules for each mitigation, for example:
+The mitigation configuration file is in JSON format and lists the mitigations
+that you want with rules for each mitigation. It is re-read every second and
+when changes are detected the new config is loaded. Certain state loss is
+associated with loading a newconfig. Example:
 
     {
         "192.0.2.1": {

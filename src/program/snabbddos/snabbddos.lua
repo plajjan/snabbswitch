@@ -18,26 +18,26 @@ local usage = require("program.snabbddos.README_inc")
 
 local long_opts = {
    help         = "h",
-   config       = "c",
+   mconfig      = "m",
    clean        = "C",
    dirty        = "D"
 }
 
 function run (args)
    local intf_dirty, intf_clean
-   local config_file_path
+   local mconfig_file_path
    local report = false
    local vlan_tag = false
 
    -- argument parsing
    local opt = {}
    function opt.h (arg) print(usage) main.exit(1) end
-   function opt.c (arg) config_file_path = arg end
+   function opt.m (arg) mconfig_file_path = arg end
    function opt.r (arg) report = true end
    function opt.C (arg) intf_clean = arg end
    function opt.D (arg) intf_dirty = arg end
    function opt.V (arg) vlan_tag = arg end
-   args = lib.dogetopt(args, opt, "hc:rD:C:V:", long_opts)
+   args = lib.dogetopt(args, opt, "hm:rD:C:V:", long_opts)
 
    local c = config.new()
 
@@ -58,7 +58,7 @@ function run (args)
 
    -- TODO: we need the reverse path set up as well so we can reply to ARP
    -- packets but first we need the ARP app
-   config.app(c, "ddos", ddos.DDoS, { config_file_path = config_file_path })
+   config.app(c, "ddos", ddos.DDoS, { config_file_path = mconfig_file_path })
    config.link(c, "dirty.output -> ddos.input")
    -- if vlan_tag is set we tag all egress/clean packets with a VLAN tag
    if vlan_tag then
