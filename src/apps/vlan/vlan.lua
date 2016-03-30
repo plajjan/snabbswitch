@@ -63,3 +63,49 @@ function Untagger:push ()
       end
    end
 end
+
+function selftest()
+   local basic_apps  = require("apps.basic.basic_apps")
+   local engine      = require("core.app")
+   local pcap        = require("apps.pcap.pcap")
+
+   -- performance test
+   -- baseline
+   local c1 = config.new()
+   config.app(c1, "source1", basic_apps.Source)
+   config.app(c1, "sink1", basic_apps.Sink)
+   config.link(c1, "source1.output -> sink1.input")
+   engine.configure(c1)
+
+   engine.main({duration=1, no_report=true})
+   local pps_baseline = link.stats(engine.app_table.sink1.input.input).txpackets
+   print("Effective rate - baseline: " .. string.format("%0.1f", tostring(pps_baseline)) .. " Mpps")
+
+   -- tagger
+   local c2 = config.new()
+   config.app(c2, "source2", basic_apps.Source)
+   config.app(c2, "tagger2", Tagger, { tag = 1234})
+   config.app(c2, "sink2", basic_apps.Sink)
+   config.link(c2, "source2.output -> tagger2.input")
+   config.link(c2, "tagger2.output -> sink2.input")
+   engine.configure(c2)
+
+   engine.main({duration=1, no_report=true})
+   local pps_tagger = link.stats(engine.app_table.sink2.input.input).txpackets
+   print("Effective rate - Tagger  : " .. string.format("%0.1f", tostring(pps_tagger)) .. " Mpps")
+
+   -- tagger + untagger
+   local c3 = config.new()
+   config.app(c3, "source3", basic_apps.Source)
+   config.app(c3, "tagger3", Tagger, { tag = 1334})
+   config.app(c3, "untagger3", Untagger, { tag = 1334})
+   config.app(c3, "sink3", basic_apps.Sink)
+   config.link(c3, "source3.output -> tagger3.input")
+   config.link(c3, "tagger3.output -> untagger3.input")
+   config.link(c3, "untagger3.output -> sink3.input")
+   engine.configure(c3)
+
+   engine.main({duration=1, no_report=true})
+   local pps_tagger_untagger = link.stats(engine.app_table.sink3.input.input).txpackets
+   print("Effective rate - Untagger: " .. string.format("%0.1f", tostring(pps_tagger_untagger)) .. " Mpps")
+end
