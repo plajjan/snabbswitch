@@ -82,8 +82,16 @@ function run (args)
    local c = config.new()
 
    -- setup interfaces
-   config.app(c, "dirty", Tap, opt.intf_dirty)
-   config.app(c, "clean", Tap, opt.intf_clean)
+   if nic_exists(opt.intf_dirty) then
+   else
+      print("dirty interface '" .. opt.intf_dirty .. "' is not an existing PCI device, assuming tap interface")
+      config.app(c, "dirty", Tap, opt.intf_dirty)
+   end
+   if nic_exists(opt.intf_dirty) then
+   else
+      print("dirty interface '" .. opt.intf_dirty .. "' is not an existing PCI device, assuming tap interface")
+      config.app(c, "clean", Tap, opt.intf_clean)
+   end
 
    -- report every second
    if opt.report then
