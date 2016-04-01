@@ -37,7 +37,7 @@ function DDoS:new (arg)
    assert(self.initial_block_time >= 5, "initial_block_time must be at least 5 seconds")
    assert(self.max_block_time >= 5, "max_block_time must be at least 5 seconds")
 
-   self:load_config()
+   self:read_config()
 
    -- store casted ethertypes for fast matching
    self.ethertype_ipv4 = ffi.cast("uint16_t", 8)
@@ -54,7 +54,8 @@ function DDoS:new (arg)
    return self
 end
 
-function DDoS:load_config()
+
+function DDoS:read_config()
    local config_file = assert(io.open(self.config_file_path, "r"))
    local config_raw = config_file:read("*all")
    -- skip loading if config is identical to last one
@@ -64,6 +65,11 @@ function DDoS:load_config()
    self.last_config = config_raw
    local config_json = json.decode(config_raw)
 
+   self:load_config(config_json)
+end
+
+
+function DDoS:load_config(config_json)
    local mitigation_config = {}
    -- prepare the config
    for entry, value in pairs(config_json) do
@@ -100,7 +106,7 @@ end
 
 function DDoS:periodic()
    -- re-read mitigation config
-   self:load_config()
+   self:read_config()
 
    -- unblock old entries in blacklist
    for dst_ip, bl in pairs(self.blacklist.ipv4) do
