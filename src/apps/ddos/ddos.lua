@@ -1,6 +1,7 @@
 module(..., package.seeall)
 
 local app = require("core.app")
+local counter = require("core.counter")
 local ffi = require("ffi")
 local filter = require("lib.pcap.filter")
 local ipv4 = require("lib.protocol.ipv4")
@@ -30,7 +31,8 @@ function DDoS:new (arg)
       mitigations = conf.mitigations,
       initial_block_time = conf.initial_block_time or 10,
       max_block_time = conf.max_block_time or 600,
-      last_report = nil
+      last_report = nil,
+      counters = {}
    }
 
    self = setmetatable(o, {__index = DDoS})
@@ -50,6 +52,26 @@ function DDoS:new (arg)
       1e9, -- every second
       'repeating'
    ))
+
+   -- init counters
+   self.counters["dirty_packets"] = counter.open("snabbddos/dirty_packets")
+   self.counters["dirty_bytes"] = counter.open("snabbddos/dirty_bytes")
+   self.counters["non_ipv4_packets"] = counter.open("snabbddos/non_ipv4_packets")
+   self.counters["non_ipv4_bytes"] = counter.open("snabbddos/non_ipv4_bytes")
+   self.counters["blacklisted_packets"] = counter.open("snabbddos/blacklisted_packets")
+   self.counters["blacklisted_bytes"] = counter.open("snabbddos/blacklisted_bytes")
+   self.counters["no_mitigation_packets"] = counter.open("snabbddos/no_mitigation_packets")
+   self.counters["no_mitigation_bytes"] = counter.open("snabbddos/no_mitigation_bytes")
+   self.counters["no_rule_packets"] = counter.open("snabbddos/no_rule_packets")
+   self.counters["no_rule_bytes"] = counter.open("snabbddos/no_rule_bytes")
+   self.counters["blocked_packets"] = counter.open("snabbddos/blocked_packets")
+   self.counters["blocked_bytes"] = counter.open("snabbddos/blocked_bytes")
+   self.counters["passed_packets"] = counter.open("snabbddos/passed_packets")
+   self.counters["passed_bytes"] = counter.open("snabbddos/passed_bytes")
+   self.counters["exceed_packets"] = counter.open("snabbddos/exceed_packets")
+   self.counters["exceed_bytes"] = counter.open("snabbddos/exceed_bytes")
+   self.counters["conform_packets"] = counter.open("snabbddos/conform_packets")
+   self.counters["conform_bytes"] = counter.open("snabbddos/conform_bytes")
 
    return self
 end
@@ -153,12 +175,20 @@ end
 function DDoS:process_packet(i, o)
    local p = link.receive(i)
    local afi
+   local counters = self.counters
+
+   counter.add(counters["dirty_packets"])
+   counter.add(counters["dirty_bytes"], p.length)
 
    -- get ethertype of packet
    local ethertype = ffi.cast("uint16_t*", packet.data(p) + 12)[0]
 
    -- just forward non-IPv4 packets
    if ethertype ~= self.ethertype_ipv4 then
+      counter.add(counters["non_ipv4_packets"])
+      counter.add(counters["non_ipv4_bytes"], p.length)
+      counter.add(counters["passed_packets"])
+      counter.add(counters["passed_bytes"], p.length)
       link.transmit(o, p)
       return
    end
@@ -177,6 +207,10 @@ function DDoS:process_packet(i, o)
    if bl then
       local ble = bl[src_ip]
       if ble and ble.action == "block" then
+         counter.add(counters["blacklisted_packets"])
+         counter.add(counters["blacklisted_bytes"], p.length)
+         counter.add(counters["blocked_packets"])
+         counter.add(counters["blocked_bytes"], p.length)
          packet.free(p)
          return
       end
@@ -187,6 +221,10 @@ function DDoS:process_packet(i, o)
    local m = self.mitigations[dst_ip]
    -- no mitigation configured for this dst ip so we pass the packet
    if not m then
+      counter.add(counters["no_mitigation_packets"])
+      counter.add(counters["no_mitigation_bytes"], p.length)
+      counter.add(counters["passed_packets"])
+      counter.add(counters["passed_bytes"], p.length)
       link.transmit(o, p)
       return
    end
@@ -195,6 +233,10 @@ function DDoS:process_packet(i, o)
    local rule = self:bpf_match(p, m.rules)
    -- didn't match any rule, so permit it
    if rule == nil then
+      counter.add(counters["no_rule_packets"])
+      counter.add(counters["no_rule_bytes"], p.length)
+      counter.add(counters["passed_packets"])
+      counter.add(counters["passed_bytes"], p.length)
       link.transmit(o, p)
       return
    end
@@ -229,8 +271,16 @@ function DDoS:process_packet(i, o)
    end
 
    if src.block_until and src.block_until < cur_now then
+      counter.add(counters["exceed_packets"])
+      counter.add(counters["exceed_bytes"], p.length)
+      counter.add(counters["blocked_packets"])
+      counter.add(counters["blocked_bytes"], p.length)
       packet.free(p)
    else
+      counter.add(counters["conform_packets"])
+      counter.add(counters["conform_bytes"], p.length)
+      counter.add(counters["passed_packets"])
+      counter.add(counters["passed_bytes"], p.length)
       link.transmit(o, p)
    end
 
