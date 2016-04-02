@@ -72,6 +72,8 @@ function DDoS:new (arg)
    self.counters["exceed_bytes"] = counter.open("snabbddos/exceed_bytes")
    self.counters["conform_packets"] = counter.open("snabbddos/conform_packets")
    self.counters["conform_bytes"] = counter.open("snabbddos/conform_bytes")
+   self.counters["running_mitigations"] = counter.open("snabbddos/running_mitigations")
+   self.counters["blacklisted_hosts"] = counter.open("snabbddos/blacklisted_hosts")
 
    return self
 end
@@ -139,6 +141,18 @@ function DDoS:periodic()
       end
    end
    -- TODO do stuff with sources struct
+
+   -- update statistics
+   num_mitigations = 0
+   num_blacklisted = 0
+   for dst_ip, mc in pairs(self.mitigations) do
+      num_mitigations = num_mitigations + 1
+      for src_ip, ble in pairs(self.blacklist.ipv4[dst_ip]) do
+         num_blacklisted = num_blacklisted +1
+      end
+   end
+   counter.set(self.counters["running_mitigations"], num_mitigations)
+   counter.set(self.counters["blacklisted_hosts"], num_blacklisted)
 end
 
 
