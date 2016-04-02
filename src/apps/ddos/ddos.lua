@@ -284,7 +284,7 @@ function DDoS:process_packet(i, o)
       self.blacklist[afi][dst_ip][src_ip] = { action = "block", block_until = src.block_until - 5 }
    end
 
-   if src.block_until and src.block_until < cur_now then
+   if src.block_until and src.block_until > cur_now then
       counter.add(counters["exceed_packets"])
       counter.add(counters["exceed_bytes"], p.length)
       counter.add(counters["blocked_packets"])
