@@ -74,6 +74,7 @@ function DDoS:new (arg)
    self.counters["conform_bytes"] = counter.open("snabbddos/conform_bytes")
    self.counters["running_mitigations"] = counter.open("snabbddos/running_mitigations")
    self.counters["blacklisted_hosts"] = counter.open("snabbddos/blacklisted_hosts")
+   self.counters["num_sources"] = counter.open("snabbddos/num_sources")
 
    return self
 end
@@ -102,10 +103,15 @@ function DDoS:load_config(config_json)
    end
    self.mitigations = mitigation_config
 
+   -- clear out all data we have for various sources since it might be outdated
+   -- by our updated config
+   self.sources = {}
+
    -- TODO: I think we can incorporate this into the loop above
    -- pre-process rules
    for dst_ip, mc in pairs(self.mitigations) do
       self.blacklist["ipv4"][dst_ip] = {}
+      self.sources[dst_ip] = {}
 
       for rule_num, rule in ipairs(mc.rules) do
          -- compile the filter
@@ -122,10 +128,6 @@ function DDoS:load_config(config_json)
          end
       end
    end
-
-   -- clear out all data we have for various sources since it might be outdated
-   -- by our updated config
-   self.sources = {}
 end
 
 function DDoS:periodic()
@@ -145,14 +147,19 @@ function DDoS:periodic()
    -- update statistics
    num_mitigations = 0
    num_blacklisted = 0
+   num_sources = 0
    for dst_ip, mc in pairs(self.mitigations) do
       num_mitigations = num_mitigations + 1
       for src_ip, ble in pairs(self.blacklist.ipv4[dst_ip]) do
          num_blacklisted = num_blacklisted +1
       end
+      for src_ip, data in pairs(self.sources[dst_ip]) do
+         num_sources = num_sources + 1
+      end
    end
    counter.set(self.counters["running_mitigations"], num_mitigations)
    counter.set(self.counters["blacklisted_hosts"], num_blacklisted)
+   counter.set(self.counters["num_sources"], num_sources)
 end
 
 

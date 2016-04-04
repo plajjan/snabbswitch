@@ -253,7 +253,7 @@ static void register_prof_events(ProfileState *ps)
 	  PERF_TYPE_HARDWARE, PERF_COUNT_HW_STALLED_CYCLES_BACKEND },
 
 	{ "cpu-cycles",
-	  PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES },
+	  PERF_TYPE_HARDWARE, 9 },
 
 	{ 0, 0, 0 }
   };
