@@ -21,7 +21,9 @@ local long_opts = {
    mconfig      = "m",
    clean        = "C",
    dirty        = "D",
-   vlan         = "V"
+   cvlan        = "M",
+   dvlan        = "N",
+
 }
 
 local function fatal(msg)
@@ -50,7 +52,7 @@ function parse_args(args)
    -- argument parsing
    local opt = {
       report = false,
-      vlan_tag = false
+      clean_vlan = false
    }
    local handlers = {}
    -- help
@@ -65,8 +67,9 @@ function parse_args(args)
    function handlers.D (arg)
       opt.intf_dirty = arg
    end
-   function handlers.V (arg) opt.vlan_tag = arg end
-   args = lib.dogetopt(args, handlers, "hm:rD:C:V:", long_opts)
+   function handlers.M (arg) opt.clean_vlan = arg end
+   function handlers.N (arg) opt.dirty_vlan = arg end
+   args = lib.dogetopt(args, handlers, "hm:rC:D:M:N:", long_opts)
 
    if not opt.intf_dirty then fatal("Missing argument -D") end
    if not opt.intf_clean then
@@ -95,40 +98,47 @@ function run (args)
 
       print("Using same physical interface for dirty and clean traffic")
       -- if dirty and clean interface is the same, require vlan tagging
-      if not opt.vlan_tag then
+      if not opt.clean_vlan then
          fatal("VLAN id must be set to use same interface for dirty and clean traffic")
       end
+      local basic_apps = require("apps.basic.basic_apps")
 
       -- setup physical interface, 10G or tap
       if nic_exists(opt.intf_dirty) then
-         config.app(c, "dirty", Intel82599, {
+         config.app(c, "nic", Intel82599, {
             pciaddr=opt.intf_dirty,
          })
          -- input and output interface names
          iif_name = "rx"
          oif_name = "tx"
-
-         -- link apps, note "tx"/"rx" on intel 10G interface
-         config.link(c, "dirty.tx -> ddos.input")
-         config.link(c, "vlan_tagger.output -> dirty.rx")
       else
          print("dirty interface '" .. opt.intf_dirty .. "' is not an existing PCI device, assuming tap interface")
-         config.app(c, "dirty", Tap, opt.intf_dirty)
+         config.app(c, "nic", Tap, opt.intf_dirty)
 
          -- input and output interface names
          iif_name = "input"
          oif_name = "output"
       end
 
+      config.app(c, "nic_tee", basic_apps.Tee)
+      config.app(c, "dirty_untag", vlan.Untagger, { tag = tonumber(opt.dirty_vlan) })
+      config.app(c, "dirty_tag", vlan.Tagger, { tag = tonumber(opt.dirty_vlan) })
+      config.app(c, "clean_untag", vlan.Untagger, { tag = tonumber(opt.clean_vlan) })
+      config.app(c, "clean_tag", vlan.Tagger, { tag = tonumber(opt.clean_vlan) })
+      config.app(c, "nic_join", basic_apps.Join)
       config.app(c, "ddos", ddos.DDoS, { config_file_path = opt.mconfig_file_path })
-      -- clean interface is a logical vlan tagger that then goes out physical
-      -- dirty interface
-      config.app(c, "vlan_tagger", vlan.Tagger, { tag = opt.vlan_tag })
 
       -- link apps
-      config.link(c, "dirty."..oif_name.." -> ddos.input")
-      config.link(c, "ddos.output -> vlan_tagger.input")
-      config.link(c, "vlan_tagger.output -> dirty."..iif_name)
+      config.link(c, "nic."..oif_name.." -> nic_tee.input")
+      config.link(c, "nic_tee.dirty -> dirty_untag.input")
+      config.link(c, "nic_tee.clean -> clean_untag.input")
+
+      config.link(c, "dirty_untag.output -> ddos.input")
+      config.link(c, "ddos.output -> clean_tag.input")
+
+      config.link(c, "dirty_tag.output -> nic_join.dirty")
+      config.link(c, "clean_tag.output -> nic_join.clean")
+      config.link(c, "nic_join.out -> nic."..iif_name)
 
    else
       -- different physical interfaces for dirty and clean traffic
@@ -159,8 +169,8 @@ function run (args)
          })
 
          -- VLAN tagging on egress?
-         if opt.vlan_tag then
-            config.app(c, "vlan_tagger", vlan.Tagger, { tag = opt.vlan_tag })
+         if opt.clean_vlan then
+            config.app(c, "vlan_tagger", vlan.Tagger, { tag = opt.clean_vlan })
             -- link ddos -> vlan -> clean
             config.link(c, "ddos.output -> vlan_tagger.input")
             config.link(c, "vlan_tagger.output -> clean.rx")
@@ -173,8 +183,8 @@ function run (args)
          config.app(c, "clean", Tap, opt.intf_clean)
 
          -- VLAN tagging on egress?
-         if opt.vlan_tag then
-            config.app(c, "vlan_tagger", vlan.Tagger, { tag = opt.vlan_tag })
+         if opt.clean_vlan then
+            config.app(c, "vlan_tagger", vlan.Tagger, { tag = opt.clean_vlan })
             -- link ddos -> vlan -> clean
             config.link(c, "ddos.output -> vlan_tagger.input")
             config.link(c, "vlan_tagger.output -> clean.input")
@@ -191,6 +201,8 @@ function run (args)
          "report",
          function()
              engine.app_table.ddos:report()
+             engine:report_apps()
+             engine:report_links()
          end,
          1e9,
          'repeating'
