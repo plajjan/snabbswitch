@@ -16,11 +16,15 @@ local dotq_tpid = 0x8100
 local o_ethernet_ethertype = 12
 local uint32_ptr_t = ffi.typeof('uint32_t*')
 
-local function build_tci(vid)
+
+-- build a VLAN tag consisting of 2 bytes of TPID set to 0x8100 followed by the
+-- TCI field which in turns consists of PCP, DEI and VID (VLAN id). Both PCP
+-- and DEI is always 0
+local function build_tag(vid)
    return ffi.C.htonl(bit.bor(bit.lshift(dotq_tpid, 16), vid))
 end
 
--- pop a VLAN tag from a packet
+-- pop a VLAN tag (4 byte of TPID and TCI) from a packet
 function pop_tag(pkt)
    local payload = pkt.data + o_ethernet_ethertype
    local length = pkt.length
@@ -28,19 +32,31 @@ function pop_tag(pkt)
    C.memmove(payload, payload + 4, length - o_ethernet_ethertype - 4)
 end
 
--- push a VLAN tag
-function push_tag(pkt, vid)
-   local tci = build_tci(vid)
+-- push a VLAN tag onto a packet
+function push_tag(pkt, tag)
    local payload = pkt.data + o_ethernet_ethertype
    local length = pkt.length
    pkt.length = length + 4
    C.memmove(payload + 4, payload, length - o_ethernet_ethertype)
-   cast(uint32_ptr_t, payload)[0] = tci
+   cast(uint32_ptr_t, payload)[0] = tag
 end
+
+-- extract TCI (2 bytes) from packet, no check is performed to verify that the
+-- packet is carrying a VLAN tag, if it's an untagged frame these bytes will be
+-- Ethernet payload
+function extract_tci(pkt)
+   return ffi.C.ntohs(ffi.cast("uint16_t*", packet.data(pkt) + o_ethernet_ethertype + 2)[0])
+end
+
+-- extract VLAN id from TCI
+function tci_to_vid(tci)
+   return bit.band(tci, 0xFFF)
+end
+
 
 function Tagger:new(conf)
    local o = setmetatable({}, {__index=Tagger})
-   o.tag = build_tci(assert(conf.tag))
+   o.tag = build_tag(assert(conf.tag))
    return o
 end
 
@@ -49,18 +65,14 @@ function Tagger:push ()
    local tag = self.tag
    for _=1,link.nreadable(input) do
       local pkt = receive(input)
-      local payload = pkt.data + o_ethernet_ethertype
-      local length = pkt.length
-      pkt.length = length + 4
-      C.memmove(payload + 4, payload, length - o_ethernet_ethertype)
-      cast(uint32_ptr_t, payload)[0] = tag
+      push_tag(pkt, tag)
       transmit(output, pkt)
    end
 end
 
 function Untagger:new(conf)
    local o = setmetatable({}, {__index=Untagger})
-   o.tag = build_tci(assert(conf.tag))
+   o.tag = build_tag(assert(conf.tag))
    return o
 end
 
@@ -74,7 +86,7 @@ function Untagger:push ()
          -- Incorrect VLAN tag; drop.
          packet.free(pkt)
       else
-         pop_tag(p)
+         pop_tag(pkt)
          transmit(output, pkt)
       end
    end
@@ -111,10 +123,8 @@ function VlanMux:push()
                   -- check for ethertype 0x8100 (802.1q VLAN tag)
                   if ethertype == self.ethertype_8100 then
                      -- dig out TCI field
-                     local tci = ffi.C.ntohs(ffi.cast("uint16_t*", packet.data(p) + o_ethernet_ethertype + 2)[0])
-                     -- extract VID from TCI
-                     local vid = bit.band(tci, 0xFFF)
-
+                     local tci = extract_tci(p)
+                     local vid = tci_to_vid(tci)
                      local oif = self.output["vlan"..vid]
                      pop_tag(p)
                      self:transmit(self.output.native, p)
@@ -124,7 +134,7 @@ function VlanMux:push()
                   end
                else -- some vlanX interface
                   local vid = tonumber(string.sub(name, 5))
-                  push_tag(p, vid)
+                  push_tag(p, build_tag(vid))
                   self:transmit(self.output.trunk, p)
                end
             end

@@ -321,7 +321,6 @@ function DDoS:bpf_match(p, rules)
    return nil
 end
 
-
 -- return data struct on source ip for specific rule
 function DDoS:get_src(dst_ip, src_ip, rule)
    -- get our data struct on that source IP
@@ -393,6 +392,9 @@ function DDoS:report()
    print("Tx: " .. num_prefix((cur.txpackets - last.txpackets) / ((cur.time - last.time) / 1e9)) .. "pps / " .. cur.txpackets .. " packets / " .. cur.txbytes .. " bytes / " .. cur.txdrop .. " packet drops")
    for dst_ip, mc in pairs(self.mitigations) do
       print("Mitigation " .. ntop(dst_ip))
+      for rule_id, rule in pairs(mc.rules) do
+         print(string.format(" - Rule %-10s rate: %10spps / %10sbps  filter: %s", rule.name, (rule.pps_rate or "-"), (rule.bps_rate or "-"), rule.filter))
+      end
       print("Blacklist:")
       for src_ip, ble in pairs(self.blacklist.ipv4[dst_ip]) do
          print("  " .. ntop(src_ip) .. " blocked for another " .. string.format("%0.1f", tostring(ble.block_until - tonumber(app.now()))) .. " seconds")
