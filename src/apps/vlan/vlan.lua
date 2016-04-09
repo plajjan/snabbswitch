@@ -127,11 +127,13 @@ function VlanMux:push()
                      local vid = tci_to_vid(tci)
                      local oif = self.output["vlan"..vid]
                      pop_tag(p)
-                     self:transmit(self.output.native, p)
+                     self:transmit(oif, p)
 
                   else -- untagged, send to native output
                      self:transmit(self.output.native, p)
                   end
+               elseif name == "native" then
+                  self:transmit(self.output.trunk, p)
                else -- some vlanX interface
                   local vid = tonumber(string.sub(name, 5))
                   push_tag(p, build_tag(vid))
